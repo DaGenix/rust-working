@@ -54,6 +54,16 @@ trait Digest {
     fn reset(&mut self);
 }
 
+pub struct Sha1State {
+    h: ~[u32],
+    len_low: u32,
+    len_high: u32,
+    msg_block: ~[u8],
+    msg_block_idx: uint,
+    computed: bool,
+    work_buf: @mut ~[u32]
+}
+
 // Some unexported constants
 static digest_buf_len: uint = 5u;
 static msg_block_len: uint = 64u;
@@ -65,15 +75,7 @@ static k3: u32 = 0xCA62C1D6u32;
 
 
 /// Construct a `sha` object
-pub fn sha1() -> @Digest {
-    struct Sha1State
-        { h: ~[u32],
-          len_low: u32,
-          len_high: u32,
-          msg_block: ~[u8],
-          msg_block_idx: uint,
-          computed: bool,
-          work_buf: @mut ~[u32]};
+pub fn sha1() -> ~Sha1State {
 
     fn add_input(st: &mut Sha1State, msg: &const [u8]) {
         assert!((!st.computed));
@@ -261,7 +263,7 @@ pub fn sha1() -> @Digest {
             return s;
         }
     }
-    let st = Sha1State {
+    let mut st = ~Sha1State {
          h: vec::from_elem(digest_buf_len, 0u32),
          len_low: 0u32,
          len_high: 0u32,
@@ -270,9 +272,8 @@ pub fn sha1() -> @Digest {
          computed: false,
          work_buf: @mut vec::from_elem(work_buf_len, 0u32)
     };
-    let mut sh = @st as @Digest;
-    sh.reset();
-    return sh;
+    st.reset();
+    return st;
 }
 
 #[cfg(test)]
