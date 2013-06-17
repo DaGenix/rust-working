@@ -142,6 +142,38 @@ mod sha64impl {
 
             return out;
         }
+
+        pub fn doFinal256(&mut self) -> ~[u8] {
+            self.finish();
+        
+            let mut out = vec::from_elem(32, 0u8);
+
+            fromWord(self.H1, vec::mut_slice(out, 0, 8));
+            fromWord(self.H2, vec::mut_slice(out, 8, 16));
+            fromWord(self.H3, vec::mut_slice(out, 16, 24));
+            fromWord(self.H4, vec::mut_slice(out, 24, 32));
+
+            return out;
+        }
+
+        pub fn doFinal224(&mut self) -> ~[u8] {
+            self.finish();
+        
+            let mut out = vec::from_elem(32, 0u8);
+
+            fromWord(self.H1, vec::mut_slice(out, 0, 8));
+            fromWord(self.H2, vec::mut_slice(out, 8, 16));
+            fromWord(self.H3, vec::mut_slice(out, 16, 24));
+            fromWord(self.H4, vec::mut_slice(out, 24, 32));
+            
+            // Todo - this can be more efficient
+            vec::pop(&mut out);
+            vec::pop(&mut out);
+            vec::pop(&mut out);
+            vec::pop(&mut out);
+            
+            return out;
+        }
         
         pub fn reset(&mut self) {
             self.byteCount1 = 0;
@@ -560,6 +592,14 @@ struct Sha384 {
     engine: sha64impl::Engine
 }
 
+struct Sha512_256 {
+    engine: sha64impl::Engine
+}
+
+struct Sha512_224 {
+    engine: sha64impl::Engine
+}
+
 struct Sha256 {
     engine: sha32impl::Engine
 }
@@ -607,6 +647,52 @@ impl Sha384 {
                 H6: 0x8eb44a8768581511u64,
                 H7: 0xdb0c2e0d64f98fa7u64,
                 H8: 0x47b5481dbefa4fa4u64,
+                W: vec::from_elem(80, 0u64),
+                wOff: 0
+            }
+        };
+    }
+}
+
+impl Sha512_256 {
+    pub fn new() -> ~Sha512_256 {
+        return ~Sha512_256 {
+            engine: sha64impl::Engine {
+                xBuf: vec::from_elem(8, 0u8),
+                xBufOff: 0,
+                byteCount1: 0,
+                byteCount2: 0,
+                H1: 0x22312194FC2BF72Cu64,
+                H2: 0x9F555FA3C84C64C2u64,
+                H3: 0x2393B86B6F53B151u64,
+                H4: 0x963877195940EABDu64,
+                H5: 0x96283EE2A88EFFE3u64,
+                H6: 0xBE5E1E2553863992u64,
+                H7: 0x2B0199FC2C85B8AAu64,
+                H8: 0x0EB72DDC81C52CA2u64,
+                W: vec::from_elem(80, 0u64),
+                wOff: 0
+            }
+        };
+    }
+}
+
+impl Sha512_224 {
+    pub fn new() -> ~Sha512_224 {
+        return ~Sha512_224 {
+            engine: sha64impl::Engine {
+                xBuf: vec::from_elem(8, 0u8),
+                xBufOff: 0,
+                byteCount1: 0,
+                byteCount2: 0,
+                H1: 0x8C3D37C819544DA2u64,
+                H2: 0x73E1996689DCD4D6u64,
+                H3: 0x1DFAB7AE32FF9C82u64,
+                H4: 0x679DD514582F9FCFu64,
+                H5: 0x0F6D2B697BD44DA8u64,
+                H6: 0x77E36F7304C48942u64,
+                H7: 0x3F9D85A86A1D36C8u64,
+                H8: 0x1112E6AD91D692A1u64,
                 W: vec::from_elem(80, 0u64),
                 wOff: 0
             }
@@ -732,6 +818,68 @@ impl Digest for Sha384 {
     }
 }
 
+impl Digest for Sha512_256 {
+    fn input(&mut self, d: &[u8]) {
+        self.engine.update_vec(d);
+    }
+
+    fn input_str(&mut self, d: &str) {
+        self.engine.update_vec(d.as_bytes());
+    }
+
+    fn result(&mut self) -> ~[u8] {
+        return self.engine.doFinal256();
+    }
+
+    fn result_str(&mut self) -> ~str {
+        return toHex(self.result());
+    }
+
+    fn reset(&mut self) {
+        self.engine.reset();
+
+        self.engine.H1 = 0x22312194FC2BF72Cu64;
+        self.engine.H2 = 0x9F555FA3C84C64C2u64;
+        self.engine.H3 = 0x2393B86B6F53B151u64;
+        self.engine.H4 = 0x963877195940EABDu64;
+        self.engine.H5 = 0x96283EE2A88EFFE3u64;
+        self.engine.H6 = 0xBE5E1E2553863992u64;
+        self.engine.H7 = 0x2B0199FC2C85B8AAu64;
+        self.engine.H8 = 0x0EB72DDC81C52CA2u64;
+    }
+}
+
+impl Digest for Sha512_224 {
+    fn input(&mut self, d: &[u8]) {
+        self.engine.update_vec(d);
+    }
+
+    fn input_str(&mut self, d: &str) {
+        self.engine.update_vec(d.as_bytes());
+    }
+
+    fn result(&mut self) -> ~[u8] {
+        return self.engine.doFinal224();
+    }
+
+    fn result_str(&mut self) -> ~str {
+        return toHex(self.result());
+    }
+
+    fn reset(&mut self) {
+        self.engine.reset();
+
+        self.engine.H1 = 0x8C3D37C819544DA2u64;
+        self.engine.H2 = 0x73E1996689DCD4D6u64;
+        self.engine.H3 = 0x1DFAB7AE32FF9C82u64;
+        self.engine.H4 = 0x679DD514582F9FCFu64;
+        self.engine.H5 = 0x0F6D2B697BD44DA8u64;
+        self.engine.H6 = 0x77E36F7304C48942u64;
+        self.engine.H7 = 0x3F9D85A86A1D36C8u64;
+        self.engine.H8 = 0x1112E6AD91D692A1u64;
+    }
+}
+
 impl Digest for Sha256 {
     fn input(&mut self, d: &[u8]) {
         self.engine.update_vec(d);
@@ -800,6 +948,8 @@ mod tests {
     use digest::Digest;
     use sha2::Sha512;
     use sha2::Sha384;
+    use sha2::Sha512_256;
+    use sha2::Sha512_224;
     use sha2::Sha256;
     use sha2::Sha224;
 
@@ -895,6 +1045,56 @@ mod tests {
         test_hash(sh, tests);
     }
 
+    #[test]
+    fn test_sha512_256() {
+        // Examples from wikipedia
+        let wikipedia_tests = ~[
+            Test {
+                input: ~"",
+                output_str: ~"c672b8d1ef56ed28ab87c3622c5114069bdd3ad7b8f9737498d0c01ecef0967a"
+            },
+            Test {
+                input: ~"The quick brown fox jumps over the lazy dog",
+                output_str: ~"dd9d67b371519c339ed8dbd25af90e976a1eeefd4ad3d889005e532fc5bef04d"
+            },
+            Test {
+                input: ~"The quick brown fox jumps over the lazy dog.",
+                output_str: ~"1546741840f8a492b959d9b8b2344b9b0eb51b004bba35c0aebaac86d45264c3"
+            },
+        ];
+
+        let tests = wikipedia_tests;
+
+        let mut sh = Sha512_256::new();
+
+        test_hash(sh, tests);
+    }
+
+    #[test]
+    fn test_sha512_224() {
+        // Examples from wikipedia
+        let wikipedia_tests = ~[
+            Test {
+                input: ~"",
+                output_str: ~"6ed0dd02806fa89e25de060c19d3ac86cabb87d6a0ddd05c333b84f4"
+            },
+            Test {
+                input: ~"The quick brown fox jumps over the lazy dog",
+                output_str: ~"944cd2847fb54558d4775db0485a50003111c8e5daa63fe722c6aa37"
+            },
+            Test {
+                input: ~"The quick brown fox jumps over the lazy dog.",
+                output_str: ~"6d6a9279495ec4061769752e7ff9c68b6b0b3c5a281b7917ce0572de"
+            },
+        ];
+
+        let tests = wikipedia_tests;
+
+        let mut sh = Sha512_224::new();
+
+        test_hash(sh, tests);
+    }
+    
     #[test]
     fn test_sha256() {
         // Examples from wikipedia
