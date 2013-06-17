@@ -9,7 +9,6 @@ mod sha64impl {
 
     pub struct Engine {
         xBuf: ~[u8],
-        xBufOff: uint,
         byteCount1: u64,
         byteCount2: u64,
         H1: u64,
@@ -21,7 +20,6 @@ mod sha64impl {
         H7: u64,
         H8: u64,
         W: ~[u64],
-        wOff: uint
     }
 
     fn toWord(in: &[u8]) -> u64 {
@@ -72,13 +70,12 @@ mod sha64impl {
 
     impl Engine {
         pub fn update(&mut self, in: u8) {
-            self.xBuf[self.xBufOff] = in;
-            self.xBufOff += 1;
+            vec::push(&mut self.xBuf, in);
 
-            if (self.xBufOff == self.xBuf.len()) {
+            if (self.xBuf.len() == 8) {
                 let w = toWord(self.xBuf);
                 self.processWord(w);
-                self.xBufOff = 0;
+                vec::truncate(&mut self.xBuf, 0);
             }
 
             self.byteCount1 += 1;
@@ -102,7 +99,7 @@ mod sha64impl {
             //
             self.update(128u8);
 
-            while self.xBufOff != 0 {
+            while self.xBuf.len() != 0 {
                 self.update(0u8);
             }
 
@@ -179,21 +176,13 @@ mod sha64impl {
             self.byteCount1 = 0;
             self.byteCount2 = 0;
 
-            self.xBufOff = 0;
-            for uint::range(0, self.xBuf.len()) |i| {
-                self.xBuf[i] = 0;
-            }
-
-            self.wOff = 0;
-            for uint::range(0, self.W.len()) |i| {
-                self.W[i] = 0;
-            }
+            vec::truncate(&mut self.xBuf, 0);
+            vec::truncate(&mut self.W, 0);
         }
 
         fn processWord(&mut self, in: u64) {
-            self.W[self.wOff] = in;
-            self.wOff += 1;
-            if (self.wOff == 16) {
+            vec::push(&mut self.W, in);
+            if (self.W.len() == 16) {
                 self.processBlock();
             }
         }
@@ -206,12 +195,16 @@ mod sha64impl {
         }
         
         fn processLength(&mut self, lowW: u64, hiW: u64) {
-            if (self.wOff > 14) {
+            if (self.W.len() > 14) {
                 self.processBlock();
             }
-
-            self.W[14] = hiW;
-            self.W[15] = lowW;
+            
+            while self.W.len() < 14 {
+                vec::push(&mut self.W, 0);
+            }
+            
+            vec::push(&mut self.W, hiW);
+            vec::push(&mut self.W, lowW);
         }
         
         fn processBlock(&mut self) {
@@ -221,7 +214,7 @@ mod sha64impl {
             // expand 16 word block into 80 word blocks.
             //
             for uint::range(16, 80) |t| {
-                self.W[t] = sigma1(self.W[t - 2]) + self.W[t - 7] + sigma0(self.W[t - 15]) + self.W[t - 16];
+                vec::push(&mut self.W, sigma1(self.W[t - 2]) + self.W[t - 7] + sigma0(self.W[t - 15]) + self.W[t - 16]);
             }
 
             //
@@ -291,10 +284,7 @@ mod sha64impl {
             //
             // reset the offset and clean out the word buffer.
             //
-            self.wOff = 0;
-            for uint::range(0, 16) |i| {
-                self.W[i] = 0;
-            }
+            vec::truncate(&mut self.W, 0);
         }
     }
     
@@ -328,7 +318,6 @@ mod sha32impl {
 
     pub struct Engine {
         xBuf: ~[u8],
-        xBufOff: uint,
         byteCount: u64,
         H1: u32,
         H2: u32,
@@ -339,7 +328,6 @@ mod sha32impl {
         H7: u32,
         H8: u32,
         X: ~[u32],
-        xOff: uint
     }
 
     fn toWord(in: &[u8]) -> u32 {
@@ -382,13 +370,12 @@ mod sha32impl {
 
     impl Engine {
         pub fn update(&mut self, in: u8) {
-            self.xBuf[self.xBufOff] = in;
-            self.xBufOff += 1;
+            vec::push(&mut self.xBuf, in);
 
-            if (self.xBufOff == self.xBuf.len()) {
+            if (self.xBuf.len() == 4) {
                 let w = toWord(self.xBuf);
                 self.processWord(w);
-                self.xBufOff = 0;
+                vec::truncate(&mut self.xBuf, 0);
             }
 
             self.byteCount += 1;
@@ -409,7 +396,7 @@ mod sha32impl {
             //
             self.update(128u8);
 
-            while self.xBufOff != 0 {
+            while self.xBuf.len() != 0 {
                 self.update(0u8);
             }
 
@@ -454,32 +441,27 @@ mod sha32impl {
         pub fn reset(&mut self) {
             self.byteCount = 0;
 
-            self.xBufOff = 0;
-            for uint::range(0, self.xBuf.len()) |i| {
-                self.xBuf[i] = 0;
-            }
-
-            self.xOff = 0;
-            for uint::range(0, self.X.len()) |i| {
-                self.X[i] = 0;
-            }
+            vec::truncate(&mut self.xBuf, 0);
+            vec::truncate(&mut self.X, 0);
         }
 
         fn processWord(&mut self, in: u32) {
-            self.X[self.xOff] = in;
-            self.xOff += 1;
-            if (self.xOff == 16) {
+            vec::push(&mut self.X, in);
+            if (self.X.len() == 16) {
                 self.processBlock();
             }
         }
         
         fn processLength(&mut self, bitLength: u64) {
-            if (self.xOff > 14) {
+            if (self.X.len() > 14) {
                 self.processBlock();
             }
+            while self.X.len() < 14 {
+                vec::push(&mut self.X, 0);
+            }
 
-            self.X[14] = (bitLength >> 32) as u32;
-            self.X[15] = (bitLength) as u32;
+            vec::push(&mut self.X, (bitLength >> 32) as u32);
+            vec::push(&mut self.X, bitLength as u32);
         }
         
         fn processBlock(&mut self) {
@@ -487,7 +469,7 @@ mod sha32impl {
             // expand 16 word block into 80 word blocks.
             //
             for uint::range(16, 64) |t| {
-                self.X[t] = theta1(self.X[t - 2]) + self.X[t - 7] + theta0(self.X[t - 15]) + self.X[t - 16];
+                vec::push(&mut self.X, theta1(self.X[t - 2]) + self.X[t - 7] + theta0(self.X[t - 15]) + self.X[t - 16]);
             }
 
             //
@@ -565,10 +547,7 @@ mod sha32impl {
             //
             // reset the offset and clean out the word buffer.
             //
-            self.xOff = 0;
-            for uint::range(0, 16) |i| {
-                self.X[i] = 0;
-            }
+            vec::truncate(&mut self.X, 0);
         }
     }
     
@@ -612,8 +591,7 @@ impl Sha512 {
     pub fn new() -> ~Sha512 {
         return ~Sha512 {
             engine: sha64impl::Engine {
-                xBuf: vec::from_elem(8, 0u8),
-                xBufOff: 0,
+                xBuf: vec::with_capacity(8),
                 byteCount1: 0,
                 byteCount2: 0,
                 H1: 0x6a09e667f3bcc908u64,
@@ -624,8 +602,7 @@ impl Sha512 {
                 H6: 0x9b05688c2b3e6c1fu64,
                 H7: 0x1f83d9abfb41bd6bu64,
                 H8: 0x5be0cd19137e2179u64,
-                W: vec::from_elem(80, 0u64),
-                wOff: 0
+                W: vec::with_capacity(80),
             }
         };
     }
@@ -635,8 +612,7 @@ impl Sha384 {
     pub fn new() -> ~Sha384 {
         return ~Sha384 {
             engine: sha64impl::Engine {
-                xBuf: vec::from_elem(8, 0u8),
-                xBufOff: 0,
+                xBuf: vec::with_capacity(8),
                 byteCount1: 0,
                 byteCount2: 0,
                 H1: 0xcbbb9d5dc1059ed8u64,
@@ -647,8 +623,7 @@ impl Sha384 {
                 H6: 0x8eb44a8768581511u64,
                 H7: 0xdb0c2e0d64f98fa7u64,
                 H8: 0x47b5481dbefa4fa4u64,
-                W: vec::from_elem(80, 0u64),
-                wOff: 0
+                W: vec::with_capacity(80),
             }
         };
     }
@@ -658,8 +633,7 @@ impl Sha512_256 {
     pub fn new() -> ~Sha512_256 {
         return ~Sha512_256 {
             engine: sha64impl::Engine {
-                xBuf: vec::from_elem(8, 0u8),
-                xBufOff: 0,
+                xBuf: vec::with_capacity(8),
                 byteCount1: 0,
                 byteCount2: 0,
                 H1: 0x22312194FC2BF72Cu64,
@@ -670,8 +644,7 @@ impl Sha512_256 {
                 H6: 0xBE5E1E2553863992u64,
                 H7: 0x2B0199FC2C85B8AAu64,
                 H8: 0x0EB72DDC81C52CA2u64,
-                W: vec::from_elem(80, 0u64),
-                wOff: 0
+                W: vec::with_capacity(80),
             }
         };
     }
@@ -681,8 +654,7 @@ impl Sha512_224 {
     pub fn new() -> ~Sha512_224 {
         return ~Sha512_224 {
             engine: sha64impl::Engine {
-                xBuf: vec::from_elem(8, 0u8),
-                xBufOff: 0,
+                xBuf: vec::with_capacity(8),
                 byteCount1: 0,
                 byteCount2: 0,
                 H1: 0x8C3D37C819544DA2u64,
@@ -693,8 +665,7 @@ impl Sha512_224 {
                 H6: 0x77E36F7304C48942u64,
                 H7: 0x3F9D85A86A1D36C8u64,
                 H8: 0x1112E6AD91D692A1u64,
-                W: vec::from_elem(80, 0u64),
-                wOff: 0
+                W: vec::with_capacity(80),
             }
         };
     }
@@ -704,8 +675,7 @@ impl Sha256 {
     pub fn new() -> ~Sha256 {
         return ~Sha256 {
             engine: sha32impl::Engine {
-                xBuf: vec::from_elem(4, 0u8),
-                xBufOff: 0,
+                xBuf: vec::with_capacity(4),
                 byteCount: 0,
                 H1: 0x6a09e667u32,
                 H2: 0xbb67ae85u32,
@@ -715,8 +685,7 @@ impl Sha256 {
                 H6: 0x9b05688cu32,
                 H7: 0x1f83d9abu32,
                 H8: 0x5be0cd19u32,
-                X: vec::from_elem(64, 0u32),
-                xOff: 0
+                X: vec::with_capacity(64),
             }
         };
     }
@@ -726,8 +695,7 @@ impl Sha224 {
     pub fn new() -> ~Sha224 {
         return ~Sha224 {
             engine: sha32impl::Engine {
-                xBuf: vec::from_elem(4, 0u8),
-                xBufOff: 0,
+                xBuf: vec::with_capacity(4),
                 byteCount: 0,
                 H1: 0xc1059ed8u32,
                 H2: 0x367cd507u32,
@@ -737,8 +705,7 @@ impl Sha224 {
                 H6: 0x68581511u32,
                 H7: 0x64f98fa7u32,
                 H8: 0xbefa4fa4u32,
-                X: vec::from_elem(64, 0u32),
-                xOff: 0
+                X: vec::with_capacity(64),
             }
         };
     }
@@ -952,8 +919,6 @@ mod tests {
     use sha2::Sha512_224;
     use sha2::Sha256;
     use sha2::Sha224;
-
-    use std::vec;
 
     struct Test {
         input: ~str,
