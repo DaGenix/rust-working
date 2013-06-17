@@ -1,10 +1,9 @@
-use std::prelude::*;
+use digest::Digest;
 
-use std::str;
 use std::uint;
 use std::vec;
 
-struct Sha512 {
+struct Sha512Engine {
     xBuf: ~[u8],
     xBufOff: uint,
     byteCount1: u64,
@@ -21,27 +20,53 @@ struct Sha512 {
     wOff: uint
 }
 
-impl Sha512 {
-    pub fn new() -> ~Sha512 {
-        let s = ~Sha512 {
-            xBuf: vec::from_elem(8, 0u8),
-            xBufOff: 0,
-            byteCount1: 0,
-            byteCount2: 0,
-            H1: 0x6a09e667f3bcc908u64,
-            H2: 0xbb67ae8584caa73bu64,
-            H3: 0x3c6ef372fe94f82bu64,
-            H4: 0xa54ff53a5f1d36f1u64,
-            H5: 0x510e527fade682d1u64,
-            H6: 0x9b05688c2b3e6c1fu64,
-            H7: 0x1f83d9abfb41bd6bu64,
-            H8: 0x5be0cd19137e2179u64,
-            W: vec::from_elem(80, 0u64),
-            wOff: 0
-        };
-        return s;
-    }
-    
+fn toWord(in: &[u8]) -> u64 {
+    return (in[0] as u64) << 56 | 
+           (in[1] as u64) << 48 | 
+           (in[2] as u64) << 40 |
+           (in[3] as u64) << 32 |
+           (in[4] as u64) << 24 |
+           (in[5] as u64) << 16 | 
+           (in[6] as u64) << 8 | 
+           (in[7] as u64);
+}
+
+fn fromWord(in: u64, out: &mut [u8]) {
+    out[0] = (in >> 56) as u8;
+    out[1] = (in >> 48) as u8;
+    out[2] = (in >> 40) as u8;
+    out[3] = (in >> 32) as u8;
+    out[4] = (in >> 24) as u8;
+    out[5] = (in >> 16) as u8;
+    out[6] = (in >> 8) as u8;
+    out[7] = (in) as u8;
+}
+
+fn ch(x: u64, y: u64, z: u64) -> u64 {
+    return ((x & y) ^ ((!x) & z));
+}
+
+fn maj(x: u64, y: u64, z: u64) -> u64 {
+    return ((x & y) ^ (x & z) ^ (y & z));
+}
+
+fn sum0(x: u64) -> u64 {
+    return ((x << 36)|(x >> 28)) ^ ((x << 30)|(x >> 34)) ^ ((x << 25)|(x >> 39));
+}
+
+fn sum1(x: u64) -> u64 {
+    return ((x << 50)|(x >> 14)) ^ ((x << 46)|(x >> 18)) ^ ((x << 23)|(x >> 41));
+}
+
+fn sigma0(x: u64) -> u64 {
+    return ((x << 63)|(x >> 1)) ^ ((x << 56)|(x >> 8)) ^ (x >> 7);
+}
+
+fn sigma1(x: u64) -> u64 {
+    return ((x << 45)|(x >> 19)) ^ ((x << 3)|(x >> 61)) ^ (x >> 6);
+}
+
+impl Sha512Engine {
     fn update(&mut self, in: u8) {
         self.xBuf[self.xBufOff] = in;
         self.xBufOff += 1;
@@ -82,7 +107,7 @@ impl Sha512 {
         self.processBlock();
     }
 
-    fn doFinal(&mut self) -> ~[u8] {
+    fn doFinal512(&mut self) -> ~[u8] {
         self.finish();
     
         let mut out = vec::from_elem(64, 0u8);
@@ -96,12 +121,25 @@ impl Sha512 {
         fromWord(self.H7, vec::mut_slice(out, 48, 56));
         fromWord(self.H8, vec::mut_slice(out, 56, 64));
 
-        self.reset();
-        
+        return out;
+    }
+
+    fn doFinal384(&mut self) -> ~[u8] {
+        self.finish();
+    
+        let mut out = vec::from_elem(48, 0u8);
+
+        fromWord(self.H1, vec::mut_slice(out, 0, 8));
+        fromWord(self.H2, vec::mut_slice(out, 8, 16));
+        fromWord(self.H3, vec::mut_slice(out, 16, 24));
+        fromWord(self.H4, vec::mut_slice(out, 24, 32));
+        fromWord(self.H5, vec::mut_slice(out, 32, 40));
+        fromWord(self.H6, vec::mut_slice(out, 40, 48));
+
         return out;
     }
     
-    fn reset_real(&mut self) {
+    fn reset(&mut self) {
         self.byteCount1 = 0;
         self.byteCount2 = 0;
 
@@ -114,18 +152,8 @@ impl Sha512 {
         for uint::range(0, self.W.len()) |i| {
             self.W[i] = 0;
         }
-        
-        self.H1 = 0x6a09e667f3bcc908u64;
-        self.H2 = 0xbb67ae8584caa73bu64;
-        self.H3 = 0x3c6ef372fe94f82bu64;
-        self.H4 = 0xa54ff53a5f1d36f1u64;
-        self.H5 = 0x510e527fade682d1u64;
-        self.H6 = 0x9b05688c2b3e6c1fu64;
-        self.H7 = 0x1f83d9abfb41bd6bu64;
-        self.H8 = 0x5be0cd19137e2179u64;
     }
 
-    // TODO - doesn't need to be &mut
     fn processWord(&mut self, in: u64) {
         self.W[self.wOff] = in;
         self.wOff += 1;
@@ -234,39 +262,131 @@ impl Sha512 {
     }
 }
 
-trait Digest {
-    fn input(&mut self, d: &[u8]);
+struct Sha512 {
+    engine: Sha512Engine
+}
 
-    fn input_str(&mut self, d: &str);
+struct Sha384 {
+    engine: Sha512Engine
+}
 
-    fn result(&mut self) -> ~[u8];
+impl Sha512 {
+    pub fn new() -> ~Sha512 {
+        return ~Sha512 {
+            engine: Sha512Engine {
+                xBuf: vec::from_elem(8, 0u8),
+                xBufOff: 0,
+                byteCount1: 0,
+                byteCount2: 0,
+                H1: 0x6a09e667f3bcc908u64,
+                H2: 0xbb67ae8584caa73bu64,
+                H3: 0x3c6ef372fe94f82bu64,
+                H4: 0xa54ff53a5f1d36f1u64,
+                H5: 0x510e527fade682d1u64,
+                H6: 0x9b05688c2b3e6c1fu64,
+                H7: 0x1f83d9abfb41bd6bu64,
+                H8: 0x5be0cd19137e2179u64,
+                W: vec::from_elem(80, 0u64),
+                wOff: 0
+            }
+        };
+    }
+}
 
-    fn result_str(&mut self) -> ~str;
+impl Sha384 {
+    pub fn new() -> ~Sha384 {
+        return ~Sha384 {
+            engine: Sha512Engine {
+                xBuf: vec::from_elem(8, 0u8),
+                xBufOff: 0,
+                byteCount1: 0,
+                byteCount2: 0,
+                H1: 0xcbbb9d5dc1059ed8u64,
+                H2: 0x629a292a367cd507u64,
+                H3: 0x9159015a3070dd17u64,
+                H4: 0x152fecd8f70e5939u64,
+                H5: 0x67332667ffc00b31u64,
+                H6: 0x8eb44a8768581511u64,
+                H7: 0xdb0c2e0d64f98fa7u64,
+                H8: 0x47b5481dbefa4fa4u64,
+                W: vec::from_elem(80, 0u64),
+                wOff: 0
+            }
+        };
+    }
+}
 
-    fn reset(&mut self);
+fn toHex(rr: &[u8]) -> ~str {
+    let mut s = ~"";
+    for rr.each |b| {
+        let hex = uint::to_str_radix(*b as uint, 16u);
+        if hex.len() == 1 {
+            s += "0";
+        }
+        s += hex;
+    }
+    return s;
 }
 
 impl Digest for Sha512 {
     fn input(&mut self, d: &[u8]) {
-        self.update_vec(d);
+        self.engine.update_vec(d);
     }
 
     fn input_str(&mut self, d: &str) {
-        self.update_vec(d.as_bytes());
+        self.engine.update_vec(d.as_bytes());
     }
 
     fn result(&mut self) -> ~[u8] {
-        return self.doFinal();
+        return self.engine.doFinal512();
     }
 
-    // TODO - if you call result() should that reset the digest? What if the next call is result_str()?
-    
     fn result_str(&mut self) -> ~str {
-        return toHex(self.doFinal());
+        return toHex(self.result());
     }
 
     fn reset(&mut self) {
-        self.reset_real();
+        self.engine.reset();
+
+        self.engine.H1 = 0x6a09e667f3bcc908u64;
+        self.engine.H2 = 0xbb67ae8584caa73bu64;
+        self.engine.H3 = 0x3c6ef372fe94f82bu64;
+        self.engine.H4 = 0xa54ff53a5f1d36f1u64;
+        self.engine.H5 = 0x510e527fade682d1u64;
+        self.engine.H6 = 0x9b05688c2b3e6c1fu64;
+        self.engine.H7 = 0x1f83d9abfb41bd6bu64;
+        self.engine.H8 = 0x5be0cd19137e2179u64;
+    }
+}
+
+impl Digest for Sha384 {
+    fn input(&mut self, d: &[u8]) {
+        self.engine.update_vec(d);
+    }
+
+    fn input_str(&mut self, d: &str) {
+        self.engine.update_vec(d.as_bytes());
+    }
+
+    fn result(&mut self) -> ~[u8] {
+        return self.engine.doFinal384();
+    }
+
+    fn result_str(&mut self) -> ~str {
+        return toHex(self.result());
+    }
+
+    fn reset(&mut self) {
+        self.engine.reset();
+
+        self.engine.H1 = 0xcbbb9d5dc1059ed8u64;
+        self.engine.H2 = 0x629a292a367cd507u64;
+        self.engine.H3 = 0x9159015a3070dd17u64;
+        self.engine.H4 = 0x152fecd8f70e5939u64;
+        self.engine.H5 = 0x67332667ffc00b31u64;
+        self.engine.H6 = 0x8eb44a8768581511u64;
+        self.engine.H7 = 0xdb0c2e0d64f98fa7u64;
+        self.engine.H8 = 0x47b5481dbefa4fa4u64;
     }
 }
 
@@ -293,129 +413,30 @@ static K: [u64, ..80] = [
     0x4cc5d4becb3e42b6u64, 0x597f299cfc657e2au64, 0x5fcb6fab3ad6faecu64, 0x6c44198c4a475817u64
 ];
 
-fn toWord(in: &[u8]) -> u64 {
-    return (in[0] as u64) << 56 | 
-           (in[1] as u64) << 48 | 
-           (in[2] as u64) << 40 |
-           (in[3] as u64) << 32 |
-           (in[4] as u64) << 24 |
-           (in[5] as u64) << 16 | 
-           (in[6] as u64) << 8 | 
-           (in[7] as u64);
-}
-
-fn fromWord(in: u64, out: &mut [u8]) {
-    out[0] = (in >> 56) as u8;
-    out[1] = (in >> 48) as u8;
-    out[2] = (in >> 40) as u8;
-    out[3] = (in >> 32) as u8;
-    out[4] = (in >> 24) as u8;
-    out[5] = (in >> 16) as u8;
-    out[6] = (in >> 8) as u8;
-    out[7] = (in) as u8;
-}
-
-fn ch(x: u64, y: u64, z: u64) -> u64 {
-    return ((x & y) ^ ((!x) & z));
-}
-
-fn maj(x: u64, y: u64, z: u64) -> u64 {
-    return ((x & y) ^ (x & z) ^ (y & z));
-}
-
-fn sum0(x: u64) -> u64 {
-    return ((x << 36)|(x >> 28)) ^ ((x << 30)|(x >> 34)) ^ ((x << 25)|(x >> 39));
-}
-
-fn sum1(x: u64) -> u64 {
-    return ((x << 50)|(x >> 14)) ^ ((x << 46)|(x >> 18)) ^ ((x << 23)|(x >> 41));
-}
-
-fn sigma0(x: u64) -> u64 {
-    return ((x << 63)|(x >> 1)) ^ ((x << 56)|(x >> 8)) ^ (x >> 7);
-}
-
-fn sigma1(x: u64) -> u64 {
-    return ((x << 45)|(x >> 19)) ^ ((x << 3)|(x >> 61)) ^ (x >> 6);
-}
-
-fn toHex(rr: &[u8]) -> ~str {
-    let mut s = ~"";
-    for rr.each |b| {
-        let hex = uint::to_str_radix(*b as uint, 16u);
-        if hex.len() == 1 {
-            s += "0";
-        }
-        s += hex;
-    }
-    return s;
-}
-
-fn main() {
-    let mut sha2 = Sha512::new();
-
-    let hash = sha2.doFinal();
-    println(toHex(hash));
-
-    println("");
-
-    sha2.update_vec("The quick brown fox".as_bytes());
-    sha2.update_vec(" jumps over the lazy dog".as_bytes());
-    let hash = sha2.doFinal();
-    println(toHex(hash));
-
-    println("");
-    
-    sha2.update_vec("The quick brown fox".as_bytes());
-    sha2.update_vec(" jumps over the lazy dog.".as_bytes());
-    let hash = sha2.doFinal();
-    println(toHex(hash));
-}
 
 #[cfg(test)]
 mod tests {
-    use Sha512;
+    use digest::Digest;
+    use sha2::Sha512;
+    use sha2::Sha384;
     use std::vec;
 
-    #[test]
-    fn test() {
-        struct Test {
-            input: ~str,
-            output_str: ~str,
-        }
-        
-        // Examples from wikipedia
-        let wikipedia_tests = ~[
-            Test {
-                input: ~"",
-                output_str: ~"cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
-            },
-            Test {
-                input: ~"The quick brown fox jumps over the lazy dog",
-                output_str: ~"07e547d9586f6a73f73fbac0435ed76951218fb7d0c8d788a309d785436bbb642e93a252a954f23912547d1e8a3b5ed6e1bfd7097821233fa0538f3db854fee6"
-            },
-            Test {
-                input: ~"The quick brown fox jumps over the lazy dog.",
-                output_str: ~"91ea1245f20d46ae9a037a989f54f1f790f0a47607eeb8a14d12890cea77a1bbc6c7ed9cf205e67b7f2b8fd4c7dfd3a7a8617e45f3c463d481c7e586c39ac1ed"
-            },
-        ];
+    struct Test {
+        input: ~str,
+        output_str: ~str,
+    }
 
-        let tests = wikipedia_tests;
-
+    fn test_hash<D: Digest>(sh: &mut D, tests: &[Test]) {
         // Test that it works when accepting the message all at once
-
-        let mut sh = Sha512::new();
 
         for tests.each |t| {
             sh.input_str(t.input);
 
             let out_str = sh.result_str();
-            assert_eq!(out_str.len(), 128);
             assert!(out_str == t.output_str);
 
             sh.reset();
         }
-
 
         // Test that it works when accepting the message in pieces
         for tests.each |t| {
@@ -428,10 +449,65 @@ mod tests {
             }
  
             let out_str = sh.result_str();
-            assert_eq!(out_str.len(), 128);
             assert!(out_str == t.output_str);
 
             sh.reset();
         }
+    }
+    
+    #[test]
+    fn test_sha512() {
+        // Examples from wikipedia
+        let wikipedia_tests = ~[
+            Test {
+                input: ~"",
+                output_str: ~"cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce" +
+                             "47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e"
+            },
+            Test {
+                input: ~"The quick brown fox jumps over the lazy dog",
+                output_str: ~"07e547d9586f6a73f73fbac0435ed76951218fb7d0c8d788a309d785436bbb64" +
+                             "2e93a252a954f23912547d1e8a3b5ed6e1bfd7097821233fa0538f3db854fee6"
+            },
+            Test {
+                input: ~"The quick brown fox jumps over the lazy dog.",
+                output_str: ~"91ea1245f20d46ae9a037a989f54f1f790f0a47607eeb8a14d12890cea77a1bb" +
+                             "c6c7ed9cf205e67b7f2b8fd4c7dfd3a7a8617e45f3c463d481c7e586c39ac1ed"
+            },
+        ];
+
+        let tests = wikipedia_tests;
+
+        let mut sh = Sha512::new();
+
+        test_hash(sh, tests);
+    }
+
+    #[test]
+    fn test_sha384() {
+        // Examples from wikipedia
+        let wikipedia_tests = ~[
+            Test {
+                input: ~"",
+                output_str: ~"38b060a751ac96384cd9327eb1b1e36a21fdb71114be0743" +
+                             "4c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+            },
+            Test {
+                input: ~"The quick brown fox jumps over the lazy dog",
+                output_str: ~"ca737f1014a48f4c0b6dd43cb177b0afd9e5169367544c49" +
+                             "4011e3317dbf9a509cb1e5dc1e85a941bbee3d7f2afbc9b1"
+            },
+            Test {
+                input: ~"The quick brown fox jumps over the lazy dog.",
+                output_str: ~"ed892481d8272ca6df370bf706e4d7bc1b5739fa2177aae6" + 
+                             "c50e946678718fc67a7af2819a021c2fc34e91bdb63409d7"
+            },
+        ];
+
+        let tests = wikipedia_tests;
+
+        let mut sh = Sha384::new();
+
+        test_hash(sh, tests);
     }
 }
