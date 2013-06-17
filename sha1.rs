@@ -61,7 +61,7 @@ struct Sha1 {
     msg_block: ~[u8],
     msg_block_idx: uint,
     computed: bool,
-    work_buf: @mut ~[u32]
+    work_buf: ~[u32]
 }
 
 // Some unexported constants
@@ -94,7 +94,7 @@ fn process_msg_block(st: &mut Sha1) {
     assert_eq!(st.h.len(), digest_buf_len);
     assert_eq!(vec::uniq_len(st.work_buf), work_buf_len);
     let mut t: int; // Loop counter
-    let w = st.work_buf;
+    let w : &mut [u32] = st.work_buf;
 
     // Initialize the first 16 words of the vector w
     t = 0;
@@ -272,7 +272,7 @@ impl Sha1 {
             msg_block: vec::from_elem(msg_block_len, 0u8),
             msg_block_idx: 0u,
             computed: false,
-            work_buf: @mut vec::from_elem(work_buf_len, 0u32)
+            work_buf: vec::from_elem(work_buf_len, 0u32)
         };
         st.reset();
         return st;
