@@ -48,6 +48,7 @@ mod sha64impl {
         H6: u64,
         H7: u64,
         W: ~[u64],
+        finished: bool
     }
 
     fn to_word(in: &[u8]) -> u64 {
@@ -98,6 +99,8 @@ mod sha64impl {
 
     impl Engine {
         pub fn update_byte(&mut self, in: u8) {
+            assert!(!self.finished)
+        
             vec::push(&mut self.input_buffer, in);
 
             if (self.input_buffer.len() == 8) {
@@ -110,6 +113,8 @@ mod sha64impl {
         }
 
         pub fn update_vec(&mut self, in: &[u8]) {
+            assert!(!self.finished)
+
             // TODO - processing full blocks would be more efficient!
             for in.each() |&b| {
                 self.update_byte(b);
@@ -118,11 +123,16 @@ mod sha64impl {
 
         pub fn reset(&mut self) {
             self.bit_counter.reset();
+            self.finished = false;
             vec::truncate(&mut self.input_buffer, 0);
             vec::truncate(&mut self.W, 0);
         }
 
         fn finish(&mut self) {
+            if (self.finished) {
+                return;
+            }
+
             // must get message length before padding is added
             let high_bit_count = self.bit_counter.get_high_bit_count();
             let low_bit_count = self.bit_counter.get_low_bit_count();
@@ -147,6 +157,8 @@ mod sha64impl {
             vec::push(&mut self.W, low_bit_count);
 
             self.process_block();
+
+            self.finished = true;
         }
 
         fn process_word(&mut self, in: u64) {
@@ -319,6 +331,7 @@ mod sha32impl {
         H6: u32,
         H7: u32,
         W: ~[u32],
+        finished: bool
     }
 
     fn to_word(in: &[u8]) -> u32 {
@@ -361,6 +374,8 @@ mod sha32impl {
 
     impl Engine {
         pub fn update_byte(&mut self, in: u8) {
+            assert!(!self.finished)
+
             vec::push(&mut self.input_buffer, in);
 
             if (self.input_buffer.len() == 4) {
@@ -373,6 +388,8 @@ mod sha32impl {
         }
 
         pub fn update_vec(&mut self, in: &[u8]) {
+            assert!(!self.finished)
+
             // TODO - processing full blocks would be more efficient!
             for in.each() |&b| {
                 self.update_byte(b);
@@ -381,6 +398,7 @@ mod sha32impl {
 
         pub fn reset(&mut self) {
             self.length_bytes = 0;
+            self.finished = false;
             vec::truncate(&mut self.input_buffer, 0);
             vec::truncate(&mut self.W, 0);
         }
@@ -462,6 +480,10 @@ mod sha32impl {
         }
 
         fn finish(&mut self) {
+            if (self.finished) {
+                return;
+            }
+        
             // must get length before adding padding
             let bit_length = self.length_bytes << 3;
 
@@ -485,6 +507,8 @@ mod sha32impl {
             vec::push(&mut self.W, bit_length as u32);
 
             self.process_block();
+            
+            self.finished = true;
         }
 
         pub fn result_256(&mut self) -> ~[u8] {
@@ -572,6 +596,7 @@ impl Sha512 {
                 H6: 0x1f83d9abfb41bd6bu64,
                 H7: 0x5be0cd19137e2179u64,
                 W: vec::with_capacity(80),
+                finished: false,
             }
         }
     }
@@ -592,6 +617,7 @@ impl Sha384 {
                 H6: 0xdb0c2e0d64f98fa7u64,
                 H7: 0x47b5481dbefa4fa4u64,
                 W: vec::with_capacity(80),
+                finished: false,
             }
         }
     }
@@ -612,6 +638,7 @@ impl Sha512_256 {
                 H6: 0x2b0199fc2c85b8aau64,
                 H7: 0x0eb72ddc81c52ca2u64,
                 W: vec::with_capacity(80),
+                finished: false,
             }
         }
     }
@@ -632,6 +659,7 @@ impl Sha512_224 {
                 H6: 0x3f9d85a86a1d36c8u64,
                 H7: 0x1112e6ad91d692a1u64,
                 W: vec::with_capacity(80),
+                finished: false,
             }
         }
     }
@@ -652,6 +680,7 @@ impl Sha256 {
                 H6: 0x1f83d9abu32,
                 H7: 0x5be0cd19u32,
                 W: vec::with_capacity(64),
+                finished: false,
             }
         }
     }
@@ -672,6 +701,7 @@ impl Sha224 {
                 H6: 0x64f98fa7u32,
                 H7: 0xbefa4fa4u32,
                 W: vec::with_capacity(64),
+                finished: false,
             }
         }
     }
