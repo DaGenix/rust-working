@@ -1,3 +1,13 @@
+// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
+// file at the top-level directory of this distribution and at
+// http://rust-lang.org/COPYRIGHT.
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 use std::vec;
 
 use digest::Digest;
@@ -582,6 +592,9 @@ struct Sha224 {
 }
 
 impl Sha512 {
+    /**
+     * Construct an new instance of a SHA-512 digest.
+     */
     pub fn new() -> ~Sha512 {
         ~Sha512 {
             engine: sha64impl::Engine {
@@ -603,6 +616,9 @@ impl Sha512 {
 }
 
 impl Sha384 {
+    /**
+     * Construct an new instance of a SHA-384 digest.
+     */
     pub fn new() -> ~Sha384 {
         ~Sha384 {
             engine: sha64impl::Engine {
@@ -624,6 +640,9 @@ impl Sha384 {
 }
 
 impl Sha512_256 {
+    /**
+     * Construct an new instance of a SHA-512/256 digest.
+     */
     pub fn new() -> ~Sha512_256 {
         ~Sha512_256 {
             engine: sha64impl::Engine {
@@ -645,6 +664,9 @@ impl Sha512_256 {
 }
 
 impl Sha512_224 {
+    /**
+     * Construct an new instance of a SHA-512/224 digest.
+     */
     pub fn new() -> ~Sha512_224 {
         ~Sha512_224 {
             engine: sha64impl::Engine {
@@ -666,6 +688,9 @@ impl Sha512_224 {
 }
 
 impl Sha256 {
+    /**
+     * Construct an new instance of a SHA-256 digest.
+     */
     pub fn new() -> ~Sha256 {
         ~Sha256 {
             engine: sha32impl::Engine {
@@ -687,6 +712,9 @@ impl Sha256 {
 }
 
 impl Sha224 {
+    /**
+     * Construct an new instance of a SHA-224 digest.
+     */
     pub fn new() -> ~Sha224 {
         ~Sha224 {
             engine: sha32impl::Engine {
@@ -882,7 +910,6 @@ mod tests {
 
     fn test_hash<D: Digest>(sh: &mut D, tests: &[Test]) {
         // Test that it works when accepting the message all at once
-
         for tests.each |t| {
             input_str(sh, t.input);
 
