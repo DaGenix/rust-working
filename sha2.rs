@@ -1,7 +1,7 @@
-use digest::Digest;
-
 use std::uint;
 use std::vec;
+
+use digest::Digest;
 
 mod sha64impl {
     use std::uint;
