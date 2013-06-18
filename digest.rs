@@ -10,12 +10,6 @@ pub trait Digest {
     fn output_bits() -> uint;
 }
 
-pub trait DigestUtil {
-    fn input_str(&mut self, d: &str);
-
-    fn result_str(&mut self) -> ~str;
-}
-
 fn toHex(rr: &[u8]) -> ~str {
     let mut s = ~"";
     for rr.each |b| {
@@ -28,12 +22,13 @@ fn toHex(rr: &[u8]) -> ~str {
     s
 }
 
-impl <T: Digest> DigestUtil for T {
-    fn input_str(&mut self, d: &str) {
-        self.input(d.as_bytes());
-    }
+// These functions would be better as default implementations,
+// but that doesn't seem to work with the current version of Rust.
 
-    fn result_str(&mut self) -> ~str {
-        toHex(self.result())
-    }
+pub fn input_str<D: Digest>(digest: &mut D, in: &str) {
+    digest.input(in.as_bytes());
+}
+
+pub fn result_str<D: Digest>(digest: &mut D) -> ~str {
+    toHex(digest.result())
 }

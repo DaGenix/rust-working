@@ -842,13 +842,8 @@ impl Digest for Sha224 {
 
 #[cfg(test)]
 mod tests {
-    use digest:: {Digest, DigestUtil};
-    use sha2::Sha512;
-    use sha2::Sha384;
-    use sha2::Sha512_256;
-    use sha2::Sha512_224;
-    use sha2::Sha256;
-    use sha2::Sha224;
+    use digest::{Digest, input_str, result_str};
+    use sha2::{Sha512, Sha384, Sha512_256, Sha512_224, Sha256, Sha224};
 
     struct Test {
         input: ~str,
@@ -859,9 +854,9 @@ mod tests {
         // Test that it works when accepting the message all at once
 
         for tests.each |t| {
-            sh.input_str(t.input);
+            input_str(sh, t.input);
 
-            let out_str = sh.result_str();
+            let out_str = result_str(sh);
             assert!(out_str == t.output_str);
 
             sh.reset();
@@ -873,11 +868,11 @@ mod tests {
             let mut left = len;
             while left > 0u {
                 let take = (left + 1u) / 2u;
-                sh.input_str(t.input.slice(len - left, take + len - left));
+                input_str(sh, t.input.slice(len - left, take + len - left));
                 left = left - take;
             }
  
-            let out_str = sh.result_str();
+            let out_str = result_str(sh);
             assert!(out_str == t.output_str);
 
             sh.reset();
