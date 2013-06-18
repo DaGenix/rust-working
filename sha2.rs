@@ -7,10 +7,40 @@ mod sha64impl {
     use std::uint;
     use std::vec;
 
+    // This is not a generic structure - just made for use by Sha512
+    pub struct BitCounter {
+        high_bit_count: u64,
+        low_byte_count: u64
+    }
+
+    // TODO - test message sizes that make this overflow
+    impl BitCounter {
+        fn add_bytes(&mut self, bytes: u64) {
+            self.low_byte_count += bytes;
+            if(self.low_byte_count > 0x1fffffffffffffffu64) {
+                self.high_bit_count += (self.low_byte_count >> 61);
+                self.low_byte_count &= 0x1fffffffffffffffu64;
+            }
+        }
+
+        fn reset(&mut self) {
+            self.low_byte_count = 0;
+            self.high_bit_count = 0;
+        }
+        
+        fn get_low_bit_count(&self) -> u64 {
+            self.low_byte_count << 3
+        }
+        
+        fn get_high_bit_count(&self) -> u64 {
+            self.high_bit_count
+        }
+    }
+    
     pub struct Engine {
-        xBuf: ~[u8],
-        byteCount1: u64,
-        byteCount2: u64,
+        input_buffer: ~[u8],
+        bit_counter: BitCounter,
+        H0: u64,
         H1: u64,
         H2: u64,
         H3: u64,
@@ -18,22 +48,21 @@ mod sha64impl {
         H5: u64,
         H6: u64,
         H7: u64,
-        H8: u64,
         W: ~[u64],
     }
 
-    fn toWord(in: &[u8]) -> u64 {
-        return (in[0] as u64) << 56 | 
-            (in[1] as u64) << 48 | 
-            (in[2] as u64) << 40 |
-            (in[3] as u64) << 32 |
-            (in[4] as u64) << 24 |
-            (in[5] as u64) << 16 | 
-            (in[6] as u64) << 8 | 
-            (in[7] as u64);
+    fn to_word(in: &[u8]) -> u64 {
+        (in[0] as u64) << 56 | 
+        (in[1] as u64) << 48 | 
+        (in[2] as u64) << 40 |
+        (in[3] as u64) << 32 |
+        (in[4] as u64) << 24 |
+        (in[5] as u64) << 16 | 
+        (in[6] as u64) << 8 | 
+        (in[7] as u64)
     }
 
-    fn fromWord(in: u64, out: &mut [u8]) {
+    fn from_word(in: u64, out: &mut [u8]) {
         out[0] = (in >> 56) as u8;
         out[1] = (in >> 48) as u8;
         out[2] = (in >> 40) as u8;
@@ -45,246 +74,209 @@ mod sha64impl {
     }
 
     fn ch(x: u64, y: u64, z: u64) -> u64 {
-        return ((x & y) ^ ((!x) & z));
+        ((x & y) ^ ((!x) & z))
     }
 
     fn maj(x: u64, y: u64, z: u64) -> u64 {
-        return ((x & y) ^ (x & z) ^ (y & z));
+        ((x & y) ^ (x & z) ^ (y & z))
     }
 
     fn sum0(x: u64) -> u64 {
-        return ((x << 36)|(x >> 28)) ^ ((x << 30)|(x >> 34)) ^ ((x << 25)|(x >> 39));
+        ((x << 36) | (x >> 28)) ^ ((x << 30) | (x >> 34)) ^ ((x << 25) | (x >> 39))
     }
 
     fn sum1(x: u64) -> u64 {
-        return ((x << 50)|(x >> 14)) ^ ((x << 46)|(x >> 18)) ^ ((x << 23)|(x >> 41));
+        ((x << 50) | (x >> 14)) ^ ((x << 46) | (x >> 18)) ^ ((x << 23) | (x >> 41))
     }
 
     fn sigma0(x: u64) -> u64 {
-        return ((x << 63)|(x >> 1)) ^ ((x << 56)|(x >> 8)) ^ (x >> 7);
+        ((x << 63) | (x >> 1)) ^ ((x << 56) | (x >> 8)) ^ (x >> 7)
     }
 
     fn sigma1(x: u64) -> u64 {
-        return ((x << 45)|(x >> 19)) ^ ((x << 3)|(x >> 61)) ^ (x >> 6);
+        ((x << 45) | (x >> 19)) ^ ((x << 3) | (x >> 61)) ^ (x >> 6)
     }
 
     impl Engine {
-        pub fn update(&mut self, in: u8) {
-            vec::push(&mut self.xBuf, in);
+        pub fn update_byte(&mut self, in: u8) {
+            vec::push(&mut self.input_buffer, in);
 
-            if (self.xBuf.len() == 8) {
-                let w = toWord(self.xBuf);
-                self.processWord(w);
-                vec::truncate(&mut self.xBuf, 0);
+            if (self.input_buffer.len() == 8) {
+                let w = to_word(self.input_buffer);
+                self.process_word(w);
+                vec::truncate(&mut self.input_buffer, 0);
             }
 
-            self.byteCount1 += 1;
+            self.bit_counter.add_bytes(1);
         }
 
         pub fn update_vec(&mut self, in: &[u8]) {
             // TODO - processing full blocks would be more efficient!
             for in.each() |&b| {
-                self.update(b);
+                self.update_byte(b);
             }
         }
 
-        fn finish(&mut self) {
-            self.adjustByteCounts();
-
-            let lowBitLength: u64 = self.byteCount1 << 3;
-            let hiBitLength: u64 = self.byteCount2;
-
-            //
-            // add the pad bytes.
-            //
-            self.update(128u8);
-
-            while self.xBuf.len() != 0 {
-                self.update(0u8);
-            }
-
-            self.processLength(lowBitLength, hiBitLength);
-
-            self.processBlock();
-        }
-
-        pub fn doFinal512(&mut self) -> ~[u8] {
-            self.finish();
-        
-            let mut out = vec::from_elem(64, 0u8);
-
-            fromWord(self.H1, vec::mut_slice(out, 0, 8));
-            fromWord(self.H2, vec::mut_slice(out, 8, 16));
-            fromWord(self.H3, vec::mut_slice(out, 16, 24));
-            fromWord(self.H4, vec::mut_slice(out, 24, 32));
-            fromWord(self.H5, vec::mut_slice(out, 32, 40));
-            fromWord(self.H6, vec::mut_slice(out, 40, 48));
-            fromWord(self.H7, vec::mut_slice(out, 48, 56));
-            fromWord(self.H8, vec::mut_slice(out, 56, 64));
-
-            return out;
-        }
-
-        pub fn doFinal384(&mut self) -> ~[u8] {
-            self.finish();
-        
-            let mut out = vec::from_elem(48, 0u8);
-
-            fromWord(self.H1, vec::mut_slice(out, 0, 8));
-            fromWord(self.H2, vec::mut_slice(out, 8, 16));
-            fromWord(self.H3, vec::mut_slice(out, 16, 24));
-            fromWord(self.H4, vec::mut_slice(out, 24, 32));
-            fromWord(self.H5, vec::mut_slice(out, 32, 40));
-            fromWord(self.H6, vec::mut_slice(out, 40, 48));
-
-            return out;
-        }
-
-        pub fn doFinal256(&mut self) -> ~[u8] {
-            self.finish();
-        
-            let mut out = vec::from_elem(32, 0u8);
-
-            fromWord(self.H1, vec::mut_slice(out, 0, 8));
-            fromWord(self.H2, vec::mut_slice(out, 8, 16));
-            fromWord(self.H3, vec::mut_slice(out, 16, 24));
-            fromWord(self.H4, vec::mut_slice(out, 24, 32));
-
-            return out;
-        }
-
-        pub fn doFinal224(&mut self) -> ~[u8] {
-            self.finish();
-        
-            let mut out = vec::from_elem(32, 0u8);
-
-            fromWord(self.H1, vec::mut_slice(out, 0, 8));
-            fromWord(self.H2, vec::mut_slice(out, 8, 16));
-            fromWord(self.H3, vec::mut_slice(out, 16, 24));
-            fromWord(self.H4, vec::mut_slice(out, 24, 32));
-            
-            // Todo - this can be more efficient
-            vec::pop(&mut out);
-            vec::pop(&mut out);
-            vec::pop(&mut out);
-            vec::pop(&mut out);
-            
-            return out;
-        }
-        
         pub fn reset(&mut self) {
-            self.byteCount1 = 0;
-            self.byteCount2 = 0;
-
-            vec::truncate(&mut self.xBuf, 0);
+            self.bit_counter.reset();
+            vec::truncate(&mut self.input_buffer, 0);
             vec::truncate(&mut self.W, 0);
         }
 
-        fn processWord(&mut self, in: u64) {
-            vec::push(&mut self.W, in);
-            if (self.W.len() == 16) {
-                self.processBlock();
+        fn finish(&mut self) {
+            // must get message length before padding is added
+            let high_bit_count = self.bit_counter.get_high_bit_count();
+            let low_bit_count = self.bit_counter.get_low_bit_count();
+
+            // add padding
+            self.update_byte(128u8);
+
+            while self.input_buffer.len() != 0 {
+                self.update_byte(0u8);
             }
-        }
-        
-        fn adjustByteCounts(&mut self) {
-            if (self.byteCount1 > 0x1fffffffffffffffu64) {
-                self.byteCount2 += (self.byteCount1 >> 61);
-                self.byteCount1 &= 0x1fffffffffffffffu64;
-            }
-        }
-        
-        fn processLength(&mut self, lowW: u64, hiW: u64) {
+
+            // add length
             if (self.W.len() > 14) {
-                self.processBlock();
+                self.process_block();
             }
-            
+
             while self.W.len() < 14 {
                 vec::push(&mut self.W, 0);
             }
-            
-            vec::push(&mut self.W, hiW);
-            vec::push(&mut self.W, lowW);
-        }
-        
-        fn processBlock(&mut self) {
-            self.adjustByteCounts();
 
-            //
-            // expand 16 word block into 80 word blocks.
-            //
+            vec::push(&mut self.W, high_bit_count);
+            vec::push(&mut self.W, low_bit_count);
+
+            self.process_block();
+        }
+
+        fn process_word(&mut self, in: u64) {
+            vec::push(&mut self.W, in);
+            if (self.W.len() == 16) {
+                self.process_block();
+            }
+        }
+                
+        fn process_block(&mut self) {
             for uint::range(16, 80) |t| {
                 vec::push(&mut self.W, sigma1(self.W[t - 2]) + self.W[t - 7] + sigma0(self.W[t - 15]) + self.W[t - 16]);
             }
 
-            //
-            // set up working variables.
-            //
-            let mut a = self.H1;
-            let mut b = self.H2;
-            let mut c = self.H3;
-            let mut d = self.H4;
-            let mut e = self.H5;
-            let mut f = self.H6;
-            let mut g = self.H7;
-            let mut h = self.H8;
+            let mut a = self.H0;
+            let mut b = self.H1;
+            let mut c = self.H2;
+            let mut d = self.H3;
+            let mut e = self.H4;
+            let mut f = self.H5;
+            let mut g = self.H6;
+            let mut h = self.H7;
 
             let mut t = 0;
             for uint::range(0, 10) |_| {
-                // t = 8 * i
                 h += sum1(e) + ch(e, f, g) + K[t] + self.W[t]; t += 1;
                 d += h;
                 h += sum0(a) + maj(a, b, c);
 
-                // t = 8 * i + 1
                 g += sum1(d) + ch(d, e, f) + K[t] + self.W[t]; t += 1;
                 c += g;
                 g += sum0(h) + maj(h, a, b);
 
-                // t = 8 * i + 2
                 f += sum1(c) + ch(c, d, e) + K[t] + self.W[t]; t += 1;
                 b += f;
                 f += sum0(g) + maj(g, h, a);
 
-                // t = 8 * i + 3
                 e += sum1(b) + ch(b, c, d) + K[t] + self.W[t]; t += 1;
                 a += e;
                 e += sum0(f) + maj(f, g, h);
 
-                // t = 8 * i + 4
                 d += sum1(a) + ch(a, b, c) + K[t] + self.W[t]; t += 1;
                 h += d;
                 d += sum0(e) + maj(e, f, g);
 
-                // t = 8 * i + 5
                 c += sum1(h) + ch(h, a, b) + K[t] + self.W[t]; t += 1;
                 g += c;
                 c += sum0(d) + maj(d, e, f);
 
-                // t = 8 * i + 6
                 b += sum1(g) + ch(g, h, a) + K[t] + self.W[t]; t += 1;
                 f += b;
                 b += sum0(c) + maj(c, d, e);
 
-                // t = 8 * i + 7
                 a += sum1(f) + ch(f, g, h) + K[t] + self.W[t]; t += 1;
                 e += a;
                 a += sum0(b) + maj(b, c, d);
             }
     
-            self.H1 += a;
-            self.H2 += b;
-            self.H3 += c;
-            self.H4 += d;
-            self.H5 += e;
-            self.H6 += f;
-            self.H7 += g;
-            self.H8 += h;
+            self.H0 += a;
+            self.H1 += b;
+            self.H2 += c;
+            self.H3 += d;
+            self.H4 += e;
+            self.H5 += f;
+            self.H6 += g;
+            self.H7 += h;
 
-            //
-            // reset the offset and clean out the word buffer.
-            //
             vec::truncate(&mut self.W, 0);
+        }
+
+        pub fn result_512(&mut self) -> ~[u8] {
+            self.finish();
+        
+            let mut out = vec::from_elem(64, 0u8);
+
+            from_word(self.H0, vec::mut_slice(out, 0, 8));
+            from_word(self.H1, vec::mut_slice(out, 8, 16));
+            from_word(self.H2, vec::mut_slice(out, 16, 24));
+            from_word(self.H3, vec::mut_slice(out, 24, 32));
+            from_word(self.H4, vec::mut_slice(out, 32, 40));
+            from_word(self.H5, vec::mut_slice(out, 40, 48));
+            from_word(self.H6, vec::mut_slice(out, 48, 56));
+            from_word(self.H7, vec::mut_slice(out, 56, 64));
+
+            out
+        }
+
+        pub fn result_384(&mut self) -> ~[u8] {
+            self.finish();
+        
+            let mut out = vec::from_elem(48, 0u8);
+
+            from_word(self.H0, vec::mut_slice(out, 0, 8));
+            from_word(self.H1, vec::mut_slice(out, 8, 16));
+            from_word(self.H2, vec::mut_slice(out, 16, 24));
+            from_word(self.H3, vec::mut_slice(out, 24, 32));
+            from_word(self.H4, vec::mut_slice(out, 32, 40));
+            from_word(self.H5, vec::mut_slice(out, 40, 48));
+
+            out
+        }
+
+        pub fn result_256(&mut self) -> ~[u8] {
+            self.finish();
+        
+            let mut out = vec::from_elem(32, 0u8);
+
+            from_word(self.H0, vec::mut_slice(out, 0, 8));
+            from_word(self.H1, vec::mut_slice(out, 8, 16));
+            from_word(self.H2, vec::mut_slice(out, 16, 24));
+            from_word(self.H3, vec::mut_slice(out, 24, 32));
+
+            out
+        }
+
+        pub fn result_224(&mut self) -> ~[u8] {
+            self.finish();
+        
+            let mut out = vec::from_elem(32, 0u8);
+
+            from_word(self.H0, vec::mut_slice(out, 0, 8));
+            from_word(self.H1, vec::mut_slice(out, 8, 16));
+            from_word(self.H2, vec::mut_slice(out, 16, 24));
+            from_word(self.H3, vec::mut_slice(out, 24, 32));
+            
+            // Todo - this can be more efficient
+            vec::truncate(&mut out, 28);
+            
+            out
         }
     }
     
@@ -317,8 +309,9 @@ mod sha32impl {
     use std::vec;
 
     pub struct Engine {
-        xBuf: ~[u8],
-        byteCount: u64,
+        input_buffer: ~[u8],
+        length_bytes: u64,
+        H0: u32,
         H1: u32,
         H2: u32,
         H3: u32,
@@ -326,18 +319,17 @@ mod sha32impl {
         H5: u32,
         H6: u32,
         H7: u32,
-        H8: u32,
-        X: ~[u32],
+        W: ~[u32],
     }
 
-    fn toWord(in: &[u8]) -> u32 {
-        return (in[0] as u32) << 24 |
-            (in[1] as u32) << 16 | 
-            (in[2] as u32) << 8 | 
-            (in[3] as u32);
+    fn to_word(in: &[u8]) -> u32 {
+        (in[0] as u32) << 24 |
+        (in[1] as u32) << 16 | 
+        (in[2] as u32) << 8 | 
+        (in[3] as u32)
     }
 
-    fn fromWord(in: u32, out: &mut [u8]) {
+    fn from_word(in: u32, out: &mut [u8]) {
         out[0] = (in >> 24) as u8;
         out[1] = (in >> 16) as u8;
         out[2] = (in >> 8) as u8;
@@ -345,209 +337,188 @@ mod sha32impl {
     }
 
     fn ch(x: u32, y: u32, z: u32) -> u32 {
-        return ((x & y) ^ ((!x) & z));
+        ((x & y) ^ ((!x) & z))
     }
 
     fn maj(x: u32, y: u32, z: u32) -> u32 {
-        return ((x & y) ^ (x & z) ^ (y & z));
+        ((x & y) ^ (x & z) ^ (y & z))
     }
 
     fn sum0(x: u32) -> u32 {
-        return ((x >> 2) | (x << 30)) ^ ((x >> 13) | (x << 19)) ^ ((x >> 22) | (x << 10));
+        ((x >> 2) | (x << 30)) ^ ((x >> 13) | (x << 19)) ^ ((x >> 22) | (x << 10))
     }
 
     fn sum1(x: u32) -> u32 {
-        return ((x >> 6) | (x << 26)) ^ ((x >> 11) | (x << 21)) ^ ((x >> 25) | (x << 7));
+        ((x >> 6) | (x << 26)) ^ ((x >> 11) | (x << 21)) ^ ((x >> 25) | (x << 7))
     }
 
-    fn theta0(x: u32) -> u32 {
-        return ((x >> 7) | (x << 25)) ^ ((x >> 18) | (x << 14)) ^ (x >> 3);
+    fn sigma0(x: u32) -> u32 {
+        ((x >> 7) | (x << 25)) ^ ((x >> 18) | (x << 14)) ^ (x >> 3)
     }
 
-    fn theta1(x: u32) -> u32 {
-        return ((x >> 17) | (x << 15)) ^ ((x >> 19) | (x << 13)) ^ (x >> 10);
+    fn sigma1(x: u32) -> u32 {
+        ((x >> 17) | (x << 15)) ^ ((x >> 19) | (x << 13)) ^ (x >> 10)
     }
 
     impl Engine {
-        pub fn update(&mut self, in: u8) {
-            vec::push(&mut self.xBuf, in);
+        pub fn update_byte(&mut self, in: u8) {
+            vec::push(&mut self.input_buffer, in);
 
-            if (self.xBuf.len() == 4) {
-                let w = toWord(self.xBuf);
-                self.processWord(w);
-                vec::truncate(&mut self.xBuf, 0);
+            if (self.input_buffer.len() == 4) {
+                let w = to_word(self.input_buffer);
+                self.process_word(w);
+                vec::truncate(&mut self.input_buffer, 0);
             }
 
-            self.byteCount += 1;
+            self.length_bytes += 1;
         }
 
         pub fn update_vec(&mut self, in: &[u8]) {
             // TODO - processing full blocks would be more efficient!
             for in.each() |&b| {
-                self.update(b);
+                self.update_byte(b);
             }
         }
 
-        fn finish(&mut self) {
-            let bitLength = self.byteCount << 3;
-
-            //
-            // add the pad bytes.
-            //
-            self.update(128u8);
-
-            while self.xBuf.len() != 0 {
-                self.update(0u8);
-            }
-
-            self.processLength(bitLength);
-
-            self.processBlock();
-        }
-
-        pub fn doFinal256(&mut self) -> ~[u8] {
-            self.finish();
-        
-            let mut out = vec::from_elem(32, 0u8);
-
-            fromWord(self.H1, vec::mut_slice(out, 0, 4));
-            fromWord(self.H2, vec::mut_slice(out, 4, 8));
-            fromWord(self.H3, vec::mut_slice(out, 8, 12));
-            fromWord(self.H4, vec::mut_slice(out, 12, 16));
-            fromWord(self.H5, vec::mut_slice(out, 16, 20));
-            fromWord(self.H6, vec::mut_slice(out, 20, 24));
-            fromWord(self.H7, vec::mut_slice(out, 24, 28));
-            fromWord(self.H8, vec::mut_slice(out, 28, 32));
-
-            return out;
-        }
-
-        pub fn doFinal224(&mut self) -> ~[u8] {
-            self.finish();
-        
-            let mut out = vec::from_elem(28, 0u8);
-
-            fromWord(self.H1, vec::mut_slice(out, 0, 4));
-            fromWord(self.H2, vec::mut_slice(out, 4, 8));
-            fromWord(self.H3, vec::mut_slice(out, 8, 12));
-            fromWord(self.H4, vec::mut_slice(out, 12, 16));
-            fromWord(self.H5, vec::mut_slice(out, 16, 20));
-            fromWord(self.H6, vec::mut_slice(out, 20, 24));
-            fromWord(self.H7, vec::mut_slice(out, 24, 28));
-
-            return out;
-        }
-        
         pub fn reset(&mut self) {
-            self.byteCount = 0;
-
-            vec::truncate(&mut self.xBuf, 0);
-            vec::truncate(&mut self.X, 0);
+            self.length_bytes = 0;
+            vec::truncate(&mut self.input_buffer, 0);
+            vec::truncate(&mut self.W, 0);
         }
 
-        fn processWord(&mut self, in: u32) {
-            vec::push(&mut self.X, in);
-            if (self.X.len() == 16) {
-                self.processBlock();
+        fn process_word(&mut self, in: u32) {
+            vec::push(&mut self.W, in);
+            if (self.W.len() == 16) {
+                self.process_block();
             }
         }
         
-        fn processLength(&mut self, bitLength: u64) {
-            if (self.X.len() > 14) {
-                self.processBlock();
-            }
-            while self.X.len() < 14 {
-                vec::push(&mut self.X, 0);
-            }
-
-            vec::push(&mut self.X, (bitLength >> 32) as u32);
-            vec::push(&mut self.X, bitLength as u32);
-        }
-        
-        fn processBlock(&mut self) {
-            //
-            // expand 16 word block into 80 word blocks.
-            //
+        fn process_block(&mut self) {
             for uint::range(16, 64) |t| {
-                vec::push(&mut self.X, theta1(self.X[t - 2]) + self.X[t - 7] + theta0(self.X[t - 15]) + self.X[t - 16]);
+                vec::push(&mut self.W, sigma1(self.W[t - 2]) + self.W[t - 7] + sigma0(self.W[t - 15]) + self.W[t - 16]);
             }
 
-            //
-            // set up working variables.
-            //
-            let mut a = self.H1;
-            let mut b = self.H2;
-            let mut c = self.H3;
-            let mut d = self.H4;
-            let mut e = self.H5;
-            let mut f = self.H6;
-            let mut g = self.H7;
-            let mut h = self.H8;
+            let mut a = self.H0;
+            let mut b = self.H1;
+            let mut c = self.H2;
+            let mut d = self.H3;
+            let mut e = self.H4;
+            let mut f = self.H5;
+            let mut g = self.H6;
+            let mut h = self.H7;
 
             let mut t = 0;
             for uint::range(0, 8) |_| {
-                // t = 8 * i
-                h += sum1(e) + ch(e, f, g) + K[t] + self.X[t];
+                h += sum1(e) + ch(e, f, g) + K[t] + self.W[t];
                 d += h;
                 h += sum0(a) + maj(a, b, c);
                 t += 1;
 
-                // t = 8 * i + 1
-                g += sum1(d) + ch(d, e, f) + K[t] + self.X[t];
+                g += sum1(d) + ch(d, e, f) + K[t] + self.W[t];
                 c += g;
                 g += sum0(h) + maj(h, a, b);
                 t += 1;
 
-                // t = 8 * i + 2
-                f += sum1(c) + ch(c, d, e) + K[t] + self.X[t];
+                f += sum1(c) + ch(c, d, e) + K[t] + self.W[t];
                 b += f;
                 f += sum0(g) + maj(g, h, a);
                 t += 1;
 
-                // t = 8 * i + 3
-                e += sum1(b) + ch(b, c, d) + K[t] + self.X[t];
+                e += sum1(b) + ch(b, c, d) + K[t] + self.W[t];
                 a += e;
                 e += sum0(f) + maj(f, g, h);
                 t += 1;
 
-                // t = 8 * i + 4
-                d += sum1(a) + ch(a, b, c) + K[t] + self.X[t];
+                d += sum1(a) + ch(a, b, c) + K[t] + self.W[t];
                 h += d;
                 d += sum0(e) + maj(e, f, g);
                 t += 1;
 
-                // t = 8 * i + 5
-                c += sum1(h) + ch(h, a, b) + K[t] + self.X[t];
+                c += sum1(h) + ch(h, a, b) + K[t] + self.W[t];
                 g += c;
                 c += sum0(d) + maj(d, e, f);
                 t += 1;
 
-                // t = 8 * i + 6
-                b += sum1(g) + ch(g, h, a) + K[t] + self.X[t];
+                b += sum1(g) + ch(g, h, a) + K[t] + self.W[t];
                 f += b;
                 b += sum0(c) + maj(c, d, e);
                 t += 1;
 
-                // t = 8 * i + 7
-                a += sum1(f) + ch(f, g, h) + K[t] + self.X[t];
+                a += sum1(f) + ch(f, g, h) + K[t] + self.W[t];
                 e += a;
                 a += sum0(b) + maj(b, c, d);
                 t += 1;
             }
     
-            self.H1 += a;
-            self.H2 += b;
-            self.H3 += c;
-            self.H4 += d;
-            self.H5 += e;
-            self.H6 += f;
-            self.H7 += g;
-            self.H8 += h;
+            self.H0 += a;
+            self.H1 += b;
+            self.H2 += c;
+            self.H3 += d;
+            self.H4 += e;
+            self.H5 += f;
+            self.H6 += g;
+            self.H7 += h;
 
-            //
-            // reset the offset and clean out the word buffer.
-            //
-            vec::truncate(&mut self.X, 0);
+            vec::truncate(&mut self.W, 0);
+        }
+
+        fn finish(&mut self) {
+            // must get length before adding padding
+            let bit_length = self.length_bytes << 3;
+
+            // add padding
+            self.update_byte(128u8);
+
+            while self.input_buffer.len() != 0 {
+                self.update_byte(0u8);
+            }
+
+            // add length
+            if (self.W.len() > 14) {
+                self.process_block();
+            }
+
+            while self.W.len() < 14 {
+                vec::push(&mut self.W, 0);
+            }
+
+            vec::push(&mut self.W, (bit_length >> 32) as u32);
+            vec::push(&mut self.W, bit_length as u32);
+
+            self.process_block();
+        }
+
+        pub fn result_256(&mut self) -> ~[u8] {
+            self.finish();
+        
+            let mut out = vec::from_elem(32, 0u8);
+
+            from_word(self.H0, vec::mut_slice(out, 0, 4));
+            from_word(self.H1, vec::mut_slice(out, 4, 8));
+            from_word(self.H2, vec::mut_slice(out, 8, 12));
+            from_word(self.H3, vec::mut_slice(out, 12, 16));
+            from_word(self.H4, vec::mut_slice(out, 16, 20));
+            from_word(self.H5, vec::mut_slice(out, 20, 24));
+            from_word(self.H6, vec::mut_slice(out, 24, 28));
+            from_word(self.H7, vec::mut_slice(out, 28, 32));
+
+            out
+        }
+
+        pub fn result_224(&mut self) -> ~[u8] {
+            self.finish();
+        
+            let mut out = vec::from_elem(28, 0u8);
+
+            from_word(self.H0, vec::mut_slice(out, 0, 4));
+            from_word(self.H1, vec::mut_slice(out, 4, 8));
+            from_word(self.H2, vec::mut_slice(out, 8, 12));
+            from_word(self.H3, vec::mut_slice(out, 12, 16));
+            from_word(self.H4, vec::mut_slice(out, 16, 20));
+            from_word(self.H5, vec::mut_slice(out, 20, 24));
+            from_word(self.H6, vec::mut_slice(out, 24, 28));
+
+            out
         }
     }
     
@@ -589,125 +560,121 @@ struct Sha224 {
 
 impl Sha512 {
     pub fn new() -> ~Sha512 {
-        return ~Sha512 {
+        ~Sha512 {
             engine: sha64impl::Engine {
-                xBuf: vec::with_capacity(8),
-                byteCount1: 0,
-                byteCount2: 0,
-                H1: 0x6a09e667f3bcc908u64,
-                H2: 0xbb67ae8584caa73bu64,
-                H3: 0x3c6ef372fe94f82bu64,
-                H4: 0xa54ff53a5f1d36f1u64,
-                H5: 0x510e527fade682d1u64,
-                H6: 0x9b05688c2b3e6c1fu64,
-                H7: 0x1f83d9abfb41bd6bu64,
-                H8: 0x5be0cd19137e2179u64,
+                input_buffer: vec::with_capacity(8),
+                bit_counter: sha64impl::BitCounter { high_bit_count: 0, low_byte_count: 0 },
+                H0: 0x6a09e667f3bcc908u64,
+                H1: 0xbb67ae8584caa73bu64,
+                H2: 0x3c6ef372fe94f82bu64,
+                H3: 0xa54ff53a5f1d36f1u64,
+                H4: 0x510e527fade682d1u64,
+                H5: 0x9b05688c2b3e6c1fu64,
+                H6: 0x1f83d9abfb41bd6bu64,
+                H7: 0x5be0cd19137e2179u64,
                 W: vec::with_capacity(80),
             }
-        };
+        }
     }
 }
 
 impl Sha384 {
     pub fn new() -> ~Sha384 {
-        return ~Sha384 {
+        ~Sha384 {
             engine: sha64impl::Engine {
-                xBuf: vec::with_capacity(8),
-                byteCount1: 0,
-                byteCount2: 0,
-                H1: 0xcbbb9d5dc1059ed8u64,
-                H2: 0x629a292a367cd507u64,
-                H3: 0x9159015a3070dd17u64,
-                H4: 0x152fecd8f70e5939u64,
-                H5: 0x67332667ffc00b31u64,
-                H6: 0x8eb44a8768581511u64,
-                H7: 0xdb0c2e0d64f98fa7u64,
-                H8: 0x47b5481dbefa4fa4u64,
+                input_buffer: vec::with_capacity(8),
+                bit_counter: sha64impl::BitCounter { high_bit_count: 0, low_byte_count: 0 },
+                H0: 0xcbbb9d5dc1059ed8u64,
+                H1: 0x629a292a367cd507u64,
+                H2: 0x9159015a3070dd17u64,
+                H3: 0x152fecd8f70e5939u64,
+                H4: 0x67332667ffc00b31u64,
+                H5: 0x8eb44a8768581511u64,
+                H6: 0xdb0c2e0d64f98fa7u64,
+                H7: 0x47b5481dbefa4fa4u64,
                 W: vec::with_capacity(80),
             }
-        };
+        }
     }
 }
 
 impl Sha512_256 {
     pub fn new() -> ~Sha512_256 {
-        return ~Sha512_256 {
+        ~Sha512_256 {
             engine: sha64impl::Engine {
-                xBuf: vec::with_capacity(8),
-                byteCount1: 0,
-                byteCount2: 0,
-                H1: 0x22312194FC2BF72Cu64,
-                H2: 0x9F555FA3C84C64C2u64,
-                H3: 0x2393B86B6F53B151u64,
-                H4: 0x963877195940EABDu64,
-                H5: 0x96283EE2A88EFFE3u64,
-                H6: 0xBE5E1E2553863992u64,
-                H7: 0x2B0199FC2C85B8AAu64,
-                H8: 0x0EB72DDC81C52CA2u64,
+                input_buffer: vec::with_capacity(8),
+                bit_counter: sha64impl::BitCounter { high_bit_count: 0, low_byte_count: 0 },
+                H0: 0x22312194fc2bf72cu64,
+                H1: 0x9f555fa3c84c64c2u64,
+                H2: 0x2393b86b6f53b151u64,
+                H3: 0x963877195940eabdu64,
+                H4: 0x96283ee2a88effe3u64,
+                H5: 0xbe5e1e2553863992u64,
+                H6: 0x2b0199fc2c85b8aau64,
+                H7: 0x0eb72ddc81c52ca2u64,
                 W: vec::with_capacity(80),
             }
-        };
+        }
     }
 }
 
 impl Sha512_224 {
     pub fn new() -> ~Sha512_224 {
-        return ~Sha512_224 {
+        ~Sha512_224 {
             engine: sha64impl::Engine {
-                xBuf: vec::with_capacity(8),
-                byteCount1: 0,
-                byteCount2: 0,
-                H1: 0x8C3D37C819544DA2u64,
-                H2: 0x73E1996689DCD4D6u64,
-                H3: 0x1DFAB7AE32FF9C82u64,
-                H4: 0x679DD514582F9FCFu64,
-                H5: 0x0F6D2B697BD44DA8u64,
-                H6: 0x77E36F7304C48942u64,
-                H7: 0x3F9D85A86A1D36C8u64,
-                H8: 0x1112E6AD91D692A1u64,
+                input_buffer: vec::with_capacity(8),
+                bit_counter: sha64impl::BitCounter { high_bit_count: 0, low_byte_count: 0 },
+                H0: 0x8c3d37c819544da2u64,
+                H1: 0x73e1996689dcd4d6u64,
+                H2: 0x1dfab7ae32ff9c82u64,
+                H3: 0x679dd514582f9fcfu64,
+                H4: 0x0f6d2b697bd44da8u64,
+                H5: 0x77e36f7304c48942u64,
+                H6: 0x3f9d85a86a1d36c8u64,
+                H7: 0x1112e6ad91d692a1u64,
                 W: vec::with_capacity(80),
             }
-        };
+        }
     }
 }
 
 impl Sha256 {
     pub fn new() -> ~Sha256 {
-        return ~Sha256 {
+        ~Sha256 {
             engine: sha32impl::Engine {
-                xBuf: vec::with_capacity(4),
-                byteCount: 0,
-                H1: 0x6a09e667u32,
-                H2: 0xbb67ae85u32,
-                H3: 0x3c6ef372u32,
-                H4: 0xa54ff53au32,
-                H5: 0x510e527fu32,
-                H6: 0x9b05688cu32,
-                H7: 0x1f83d9abu32,
-                H8: 0x5be0cd19u32,
-                X: vec::with_capacity(64),
+                input_buffer: vec::with_capacity(4),
+                length_bytes: 0,
+                H0: 0x6a09e667u32,
+                H1: 0xbb67ae85u32,
+                H2: 0x3c6ef372u32,
+                H3: 0xa54ff53au32,
+                H4: 0x510e527fu32,
+                H5: 0x9b05688cu32,
+                H6: 0x1f83d9abu32,
+                H7: 0x5be0cd19u32,
+                W: vec::with_capacity(64),
             }
-        };
+        }
     }
 }
 
 impl Sha224 {
     pub fn new() -> ~Sha224 {
-        return ~Sha224 {
+        ~Sha224 {
             engine: sha32impl::Engine {
-                xBuf: vec::with_capacity(4),
-                byteCount: 0,
-                H1: 0xc1059ed8u32,
-                H2: 0x367cd507u32,
-                H3: 0x3070dd17u32,
-                H4: 0xf70e5939u32,
-                H5: 0xffc00b31u32,
-                H6: 0x68581511u32,
-                H7: 0x64f98fa7u32,
-                H8: 0xbefa4fa4u32,
-                X: vec::with_capacity(64),
+                input_buffer: vec::with_capacity(4),
+                length_bytes: 0,
+                H0: 0xc1059ed8u32,
+                H1: 0x367cd507u32,
+                H2: 0x3070dd17u32,
+                H3: 0xf70e5939u32,
+                H4: 0xffc00b31u32,
+                H5: 0x68581511u32,
+                H6: 0x64f98fa7u32,
+                H7: 0xbefa4fa4u32,
+                W: vec::with_capacity(64),
             }
-        };
+        }
     }
 }
 
@@ -720,7 +687,7 @@ fn toHex(rr: &[u8]) -> ~str {
         }
         s += hex;
     }
-    return s;
+    s
 }
 
 impl Digest for Sha512 {
@@ -733,24 +700,24 @@ impl Digest for Sha512 {
     }
 
     fn result(&mut self) -> ~[u8] {
-        return self.engine.doFinal512();
+        self.engine.result_512()
     }
 
     fn result_str(&mut self) -> ~str {
-        return toHex(self.result());
+        toHex(self.result())
     }
 
     fn reset(&mut self) {
         self.engine.reset();
 
-        self.engine.H1 = 0x6a09e667f3bcc908u64;
-        self.engine.H2 = 0xbb67ae8584caa73bu64;
-        self.engine.H3 = 0x3c6ef372fe94f82bu64;
-        self.engine.H4 = 0xa54ff53a5f1d36f1u64;
-        self.engine.H5 = 0x510e527fade682d1u64;
-        self.engine.H6 = 0x9b05688c2b3e6c1fu64;
-        self.engine.H7 = 0x1f83d9abfb41bd6bu64;
-        self.engine.H8 = 0x5be0cd19137e2179u64;
+        self.engine.H0 = 0x6a09e667f3bcc908u64;
+        self.engine.H1 = 0xbb67ae8584caa73bu64;
+        self.engine.H2 = 0x3c6ef372fe94f82bu64;
+        self.engine.H3 = 0xa54ff53a5f1d36f1u64;
+        self.engine.H4 = 0x510e527fade682d1u64;
+        self.engine.H5 = 0x9b05688c2b3e6c1fu64;
+        self.engine.H6 = 0x1f83d9abfb41bd6bu64;
+        self.engine.H7 = 0x5be0cd19137e2179u64;
     }
 }
 
@@ -764,24 +731,24 @@ impl Digest for Sha384 {
     }
 
     fn result(&mut self) -> ~[u8] {
-        return self.engine.doFinal384();
+        self.engine.result_384()
     }
 
     fn result_str(&mut self) -> ~str {
-        return toHex(self.result());
+        toHex(self.result())
     }
 
     fn reset(&mut self) {
         self.engine.reset();
 
-        self.engine.H1 = 0xcbbb9d5dc1059ed8u64;
-        self.engine.H2 = 0x629a292a367cd507u64;
-        self.engine.H3 = 0x9159015a3070dd17u64;
-        self.engine.H4 = 0x152fecd8f70e5939u64;
-        self.engine.H5 = 0x67332667ffc00b31u64;
-        self.engine.H6 = 0x8eb44a8768581511u64;
-        self.engine.H7 = 0xdb0c2e0d64f98fa7u64;
-        self.engine.H8 = 0x47b5481dbefa4fa4u64;
+        self.engine.H0 = 0xcbbb9d5dc1059ed8u64;
+        self.engine.H1 = 0x629a292a367cd507u64;
+        self.engine.H2 = 0x9159015a3070dd17u64;
+        self.engine.H3 = 0x152fecd8f70e5939u64;
+        self.engine.H4 = 0x67332667ffc00b31u64;
+        self.engine.H5 = 0x8eb44a8768581511u64;
+        self.engine.H6 = 0xdb0c2e0d64f98fa7u64;
+        self.engine.H7 = 0x47b5481dbefa4fa4u64;
     }
 }
 
@@ -795,24 +762,24 @@ impl Digest for Sha512_256 {
     }
 
     fn result(&mut self) -> ~[u8] {
-        return self.engine.doFinal256();
+        self.engine.result_256()
     }
 
     fn result_str(&mut self) -> ~str {
-        return toHex(self.result());
+        toHex(self.result())
     }
 
     fn reset(&mut self) {
         self.engine.reset();
 
-        self.engine.H1 = 0x22312194FC2BF72Cu64;
-        self.engine.H2 = 0x9F555FA3C84C64C2u64;
-        self.engine.H3 = 0x2393B86B6F53B151u64;
-        self.engine.H4 = 0x963877195940EABDu64;
-        self.engine.H5 = 0x96283EE2A88EFFE3u64;
-        self.engine.H6 = 0xBE5E1E2553863992u64;
-        self.engine.H7 = 0x2B0199FC2C85B8AAu64;
-        self.engine.H8 = 0x0EB72DDC81C52CA2u64;
+        self.engine.H0 = 0x22312194fc2bf72cu64;
+        self.engine.H1 = 0x9f555fa3c84c64c2u64;
+        self.engine.H2 = 0x2393b86b6f53b151u64;
+        self.engine.H3 = 0x963877195940eabdu64;
+        self.engine.H4 = 0x96283ee2a88effe3u64;
+        self.engine.H5 = 0xbe5e1e2553863992u64;
+        self.engine.H6 = 0x2b0199fc2c85b8aau64;
+        self.engine.H7 = 0x0eb72ddc81c52ca2u64;
     }
 }
 
@@ -826,24 +793,24 @@ impl Digest for Sha512_224 {
     }
 
     fn result(&mut self) -> ~[u8] {
-        return self.engine.doFinal224();
+        self.engine.result_224()
     }
 
     fn result_str(&mut self) -> ~str {
-        return toHex(self.result());
+        toHex(self.result())
     }
 
     fn reset(&mut self) {
         self.engine.reset();
 
-        self.engine.H1 = 0x8C3D37C819544DA2u64;
-        self.engine.H2 = 0x73E1996689DCD4D6u64;
-        self.engine.H3 = 0x1DFAB7AE32FF9C82u64;
-        self.engine.H4 = 0x679DD514582F9FCFu64;
-        self.engine.H5 = 0x0F6D2B697BD44DA8u64;
-        self.engine.H6 = 0x77E36F7304C48942u64;
-        self.engine.H7 = 0x3F9D85A86A1D36C8u64;
-        self.engine.H8 = 0x1112E6AD91D692A1u64;
+        self.engine.H0 = 0x8c3d37c819544da2u64;
+        self.engine.H1 = 0x73e1996689dcd4d6u64;
+        self.engine.H2 = 0x1dfab7ae32ff9c82u64;
+        self.engine.H3 = 0x679dd514582f9fcfu64;
+        self.engine.H4 = 0x0f6d2b697bd44da8u64;
+        self.engine.H5 = 0x77e36f7304c48942u64;
+        self.engine.H6 = 0x3f9d85a86a1d36c8u64;
+        self.engine.H7 = 0x1112e6ad91d692a1u64;
     }
 }
 
@@ -857,24 +824,24 @@ impl Digest for Sha256 {
     }
 
     fn result(&mut self) -> ~[u8] {
-        return self.engine.doFinal256();
+        self.engine.result_256()
     }
 
     fn result_str(&mut self) -> ~str {
-        return toHex(self.result());
+        toHex(self.result())
     }
 
     fn reset(&mut self) {
         self.engine.reset();
 
-        self.engine.H1 = 0x6a09e667u32;
-        self.engine.H2 = 0xbb67ae85u32;
-        self.engine.H3 = 0x3c6ef372u32;
-        self.engine.H4 = 0xa54ff53au32;
-        self.engine.H5 = 0x510e527fu32;
-        self.engine.H6 = 0x9b05688cu32;
-        self.engine.H7 = 0x1f83d9abu32;
-        self.engine.H8 = 0x5be0cd19u32;
+        self.engine.H0 = 0x6a09e667u32;
+        self.engine.H1 = 0xbb67ae85u32;
+        self.engine.H2 = 0x3c6ef372u32;
+        self.engine.H3 = 0xa54ff53au32;
+        self.engine.H4 = 0x510e527fu32;
+        self.engine.H5 = 0x9b05688cu32;
+        self.engine.H6 = 0x1f83d9abu32;
+        self.engine.H7 = 0x5be0cd19u32;
     }
 }
 
@@ -888,24 +855,24 @@ impl Digest for Sha224 {
     }
 
     fn result(&mut self) -> ~[u8] {
-        return self.engine.doFinal224();
+        self.engine.result_224()
     }
 
     fn result_str(&mut self) -> ~str {
-        return toHex(self.result());
+        toHex(self.result())
     }
 
     fn reset(&mut self) {
         self.engine.reset();
 
-        self.engine.H1 = 0xc1059ed8u32;
-        self.engine.H2 = 0x367cd507u32;
-        self.engine.H3 = 0x3070dd17u32;
-        self.engine.H4 = 0xf70e5939u32;
-        self.engine.H5 = 0xffc00b31u32;
-        self.engine.H6 = 0x68581511u32;
-        self.engine.H7 = 0x64f98fa7u32;
-        self.engine.H8 = 0xbefa4fa4u32;
+        self.engine.H0 = 0xc1059ed8u32;
+        self.engine.H1 = 0x367cd507u32;
+        self.engine.H2 = 0x3070dd17u32;
+        self.engine.H3 = 0xf70e5939u32;
+        self.engine.H4 = 0xffc00b31u32;
+        self.engine.H5 = 0x68581511u32;
+        self.engine.H6 = 0x64f98fa7u32;
+        self.engine.H7 = 0xbefa4fa4u32;
     }
 }
 
