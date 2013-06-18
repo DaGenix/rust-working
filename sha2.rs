@@ -24,8 +24,8 @@ mod sha64impl {
 
     // TODO - test message sizes that make this overflow
     impl BitCounter {
-        fn add_bytes(&mut self, bytes: u64) {
-            self.low_byte_count += bytes;
+        fn add_bytes(&mut self, bytes: uint) {
+            self.low_byte_count += bytes as u64;
             if(self.low_byte_count > 0x1fffffffffffffffu64) {
                 self.high_bit_count += (self.low_byte_count >> 61);
                 self.low_byte_count &= 0x1fffffffffffffffu64;
@@ -125,9 +125,23 @@ mod sha64impl {
         pub fn update_vec(&mut self, in: &[u8]) {
             assert!(!self.finished)
 
-            // TODO - processing full blocks would be more efficient!
-            for in.each() |&b| {
-                self.update_byte(b);
+            let mut i = 0;
+            
+            while i < in.len() {
+                self.update_byte(in[i]);
+                i += 1;
+            }
+            
+            while in.len() - i >= 8 {
+                let w = to_word(vec::slice(in, i, i + 8));
+                self.process_word(w);
+                self.bit_counter.add_bytes(8);
+                i += 8;
+            }
+            
+            while i < in.len() {
+                self.update_byte(in[i]);
+                i += 1;
             }
         }
 
@@ -400,10 +414,25 @@ mod sha32impl {
         pub fn update_vec(&mut self, in: &[u8]) {
             assert!(!self.finished)
 
-            // TODO - processing full blocks would be more efficient!
-            for in.each() |&b| {
-                self.update_byte(b);
+            let mut i = 0;
+            
+            while i < in.len() {
+                self.update_byte(in[i]);
+                i += 1;
             }
+            
+            while in.len() - i >= 4 {
+                let w = to_word(vec::slice(in, i, i + 4));
+                self.process_word(w);
+                self.length_bytes += 4;
+                i += 4;
+            }
+            
+            while i < in.len() {
+                self.update_byte(in[i]);
+                i += 1;
+            }
+
         }
 
         pub fn reset(&mut self) {
