@@ -1,4 +1,3 @@
-use std::uint;
 use std::vec;
 
 use digest::Digest;
@@ -678,33 +677,13 @@ impl Sha224 {
     }
 }
 
-fn toHex(rr: &[u8]) -> ~str {
-    let mut s = ~"";
-    for rr.each |b| {
-        let hex = uint::to_str_radix(*b as uint, 16u);
-        if hex.len() == 1 {
-            s += "0";
-        }
-        s += hex;
-    }
-    s
-}
-
 impl Digest for Sha512 {
     fn input(&mut self, d: &[u8]) {
         self.engine.update_vec(d);
     }
 
-    fn input_str(&mut self, d: &str) {
-        self.engine.update_vec(d.as_bytes());
-    }
-
     fn result(&mut self) -> ~[u8] {
         self.engine.result_512()
-    }
-
-    fn result_str(&mut self) -> ~str {
-        toHex(self.result())
     }
 
     fn reset(&mut self) {
@@ -719,6 +698,10 @@ impl Digest for Sha512 {
         self.engine.H6 = 0x1f83d9abfb41bd6bu64;
         self.engine.H7 = 0x5be0cd19137e2179u64;
     }
+
+    fn output_bits() -> uint {
+        512
+    }
 }
 
 impl Digest for Sha384 {
@@ -726,16 +709,8 @@ impl Digest for Sha384 {
         self.engine.update_vec(d);
     }
 
-    fn input_str(&mut self, d: &str) {
-        self.engine.update_vec(d.as_bytes());
-    }
-
     fn result(&mut self) -> ~[u8] {
         self.engine.result_384()
-    }
-
-    fn result_str(&mut self) -> ~str {
-        toHex(self.result())
     }
 
     fn reset(&mut self) {
@@ -750,6 +725,10 @@ impl Digest for Sha384 {
         self.engine.H6 = 0xdb0c2e0d64f98fa7u64;
         self.engine.H7 = 0x47b5481dbefa4fa4u64;
     }
+
+    fn output_bits() -> uint {
+        384
+    }
 }
 
 impl Digest for Sha512_256 {
@@ -757,16 +736,8 @@ impl Digest for Sha512_256 {
         self.engine.update_vec(d);
     }
 
-    fn input_str(&mut self, d: &str) {
-        self.engine.update_vec(d.as_bytes());
-    }
-
     fn result(&mut self) -> ~[u8] {
         self.engine.result_256()
-    }
-
-    fn result_str(&mut self) -> ~str {
-        toHex(self.result())
     }
 
     fn reset(&mut self) {
@@ -781,6 +752,10 @@ impl Digest for Sha512_256 {
         self.engine.H6 = 0x2b0199fc2c85b8aau64;
         self.engine.H7 = 0x0eb72ddc81c52ca2u64;
     }
+
+    fn output_bits() -> uint {
+        256
+    }
 }
 
 impl Digest for Sha512_224 {
@@ -788,16 +763,8 @@ impl Digest for Sha512_224 {
         self.engine.update_vec(d);
     }
 
-    fn input_str(&mut self, d: &str) {
-        self.engine.update_vec(d.as_bytes());
-    }
-
     fn result(&mut self) -> ~[u8] {
         self.engine.result_224()
-    }
-
-    fn result_str(&mut self) -> ~str {
-        toHex(self.result())
     }
 
     fn reset(&mut self) {
@@ -812,6 +779,10 @@ impl Digest for Sha512_224 {
         self.engine.H6 = 0x3f9d85a86a1d36c8u64;
         self.engine.H7 = 0x1112e6ad91d692a1u64;
     }
+
+    fn output_bits() -> uint {
+        224
+    }
 }
 
 impl Digest for Sha256 {
@@ -819,16 +790,8 @@ impl Digest for Sha256 {
         self.engine.update_vec(d);
     }
 
-    fn input_str(&mut self, d: &str) {
-        self.engine.update_vec(d.as_bytes());
-    }
-
     fn result(&mut self) -> ~[u8] {
         self.engine.result_256()
-    }
-
-    fn result_str(&mut self) -> ~str {
-        toHex(self.result())
     }
 
     fn reset(&mut self) {
@@ -843,6 +806,10 @@ impl Digest for Sha256 {
         self.engine.H6 = 0x1f83d9abu32;
         self.engine.H7 = 0x5be0cd19u32;
     }
+
+    fn output_bits() -> uint {
+        256
+    }
 }
 
 impl Digest for Sha224 {
@@ -850,16 +817,8 @@ impl Digest for Sha224 {
         self.engine.update_vec(d);
     }
 
-    fn input_str(&mut self, d: &str) {
-        self.engine.update_vec(d.as_bytes());
-    }
-
     fn result(&mut self) -> ~[u8] {
         self.engine.result_224()
-    }
-
-    fn result_str(&mut self) -> ~str {
-        toHex(self.result())
     }
 
     fn reset(&mut self) {
@@ -874,12 +833,16 @@ impl Digest for Sha224 {
         self.engine.H6 = 0x64f98fa7u32;
         self.engine.H7 = 0xbefa4fa4u32;
     }
+    
+    fn output_bits() -> uint {
+        224
+    }
 }
 
 
 #[cfg(test)]
 mod tests {
-    use digest::Digest;
+    use digest:: {Digest, DigestUtil};
     use sha2::Sha512;
     use sha2::Sha384;
     use sha2::Sha512_256;
