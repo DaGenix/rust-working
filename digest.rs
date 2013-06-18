@@ -10,10 +10,10 @@ pub trait Digest {
     fn output_bits() -> uint;
 }
 
-fn toHex(rr: &[u8]) -> ~str {
+fn to_hex(rr: &[u8]) -> ~str {
     let mut s = ~"";
-    for rr.each |b| {
-        let hex = uint::to_str_radix(*b as uint, 16u);
+    for rr.each |&b| {
+        let hex = uint::to_str_radix(b as uint, 16u);
         if hex.len() == 1 {
             s += "0";
         }
@@ -30,5 +30,5 @@ pub fn input_str<D: Digest>(digest: &mut D, in: &str) {
 }
 
 pub fn result_str<D: Digest>(digest: &mut D) -> ~str {
-    toHex(digest.result())
+    to_hex(digest.result())
 }
