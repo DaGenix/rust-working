@@ -108,7 +108,7 @@ mod sha64impl {
     }
 
     impl Engine {
-        pub fn update_byte(&mut self, in: u8) {
+        pub fn input_byte(&mut self, in: u8) {
             assert!(!self.finished)
         
             vec::push(&mut self.input_buffer, in);
@@ -122,13 +122,13 @@ mod sha64impl {
             self.bit_counter.add_bytes(1);
         }
 
-        pub fn update_vec(&mut self, in: &[u8]) {
+        pub fn input_vec(&mut self, in: &[u8]) {
             assert!(!self.finished)
 
             let mut i = 0;
             
             while i < in.len() {
-                self.update_byte(in[i]);
+                self.input_byte(in[i]);
                 i += 1;
             }
             
@@ -140,7 +140,7 @@ mod sha64impl {
             }
             
             while i < in.len() {
-                self.update_byte(in[i]);
+                self.input_byte(in[i]);
                 i += 1;
             }
         }
@@ -162,10 +162,10 @@ mod sha64impl {
             let low_bit_count = self.bit_counter.get_low_bit_count();
 
             // add padding
-            self.update_byte(128u8);
+            self.input_byte(128u8);
 
             while self.input_buffer.len() != 0 {
-                self.update_byte(0u8);
+                self.input_byte(0u8);
             }
 
             // add length
@@ -397,7 +397,7 @@ mod sha32impl {
     }
 
     impl Engine {
-        pub fn update_byte(&mut self, in: u8) {
+        pub fn input_byte(&mut self, in: u8) {
             assert!(!self.finished)
 
             vec::push(&mut self.input_buffer, in);
@@ -411,13 +411,13 @@ mod sha32impl {
             self.length_bytes += 1;
         }
 
-        pub fn update_vec(&mut self, in: &[u8]) {
+        pub fn input_vec(&mut self, in: &[u8]) {
             assert!(!self.finished)
 
             let mut i = 0;
             
             while i < in.len() {
-                self.update_byte(in[i]);
+                self.input_byte(in[i]);
                 i += 1;
             }
             
@@ -429,7 +429,7 @@ mod sha32impl {
             }
             
             while i < in.len() {
-                self.update_byte(in[i]);
+                self.input_byte(in[i]);
                 i += 1;
             }
 
@@ -527,10 +527,10 @@ mod sha32impl {
             let bit_length = self.length_bytes << 3;
 
             // add padding
-            self.update_byte(128u8);
+            self.input_byte(128u8);
 
             while self.input_buffer.len() != 0 {
-                self.update_byte(0u8);
+                self.input_byte(0u8);
             }
 
             // add length
@@ -766,7 +766,7 @@ impl Sha224 {
 
 impl Digest for Sha512 {
     fn input(&mut self, d: &[u8]) {
-        self.engine.update_vec(d);
+        self.engine.input_vec(d);
     }
 
     fn result(&mut self) -> ~[u8] {
@@ -793,7 +793,7 @@ impl Digest for Sha512 {
 
 impl Digest for Sha384 {
     fn input(&mut self, d: &[u8]) {
-        self.engine.update_vec(d);
+        self.engine.input_vec(d);
     }
 
     fn result(&mut self) -> ~[u8] {
@@ -820,7 +820,7 @@ impl Digest for Sha384 {
 
 impl Digest for Sha512_256 {
     fn input(&mut self, d: &[u8]) {
-        self.engine.update_vec(d);
+        self.engine.input_vec(d);
     }
 
     fn result(&mut self) -> ~[u8] {
@@ -847,7 +847,7 @@ impl Digest for Sha512_256 {
 
 impl Digest for Sha512_224 {
     fn input(&mut self, d: &[u8]) {
-        self.engine.update_vec(d);
+        self.engine.input_vec(d);
     }
 
     fn result(&mut self) -> ~[u8] {
@@ -874,7 +874,7 @@ impl Digest for Sha512_224 {
 
 impl Digest for Sha256 {
     fn input(&mut self, d: &[u8]) {
-        self.engine.update_vec(d);
+        self.engine.input_vec(d);
     }
 
     fn result(&mut self) -> ~[u8] {
@@ -901,7 +901,7 @@ impl Digest for Sha256 {
 
 impl Digest for Sha224 {
     fn input(&mut self, d: &[u8]) {
-        self.engine.update_vec(d);
+        self.engine.input_vec(d);
     }
 
     fn result(&mut self) -> ~[u8] {
