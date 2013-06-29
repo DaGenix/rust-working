@@ -11,8 +11,6 @@
 use std::uint;
 
 
-
-
 pub trait SymmetricBlockEncryptor {
     fn init(&mut self, key: &[u8]);
     fn encrypt(&mut self, in: &[u8], out: &mut [u8]);
@@ -28,11 +26,9 @@ pub trait SymmetricBlockDecryptor {
 }
 
 
-
-
-
-
-
+/*!
+ * A Simple AES implementation based off of the one from BouncyCastle.
+ */
 
 macro_rules! define_aes_struct(
     (
