@@ -8,7 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::libc::*;
 use std::uint;
 
 
@@ -35,47 +34,26 @@ pub trait SymmetricBlockDecryptor {
 
 
 
-macro_rules! define_aes_1(
+macro_rules! define_aes_struct(
     (
-        $enc_name:ident,
-        $dec_name:ident,
-        $rounds:expr,
-        $wk_size:expr,
-        $key_size:expr
+        $name:ident,
+        $wk_size:expr
     ) => (
-        struct $enc_name {
+        struct $name {
             working_key: [[u32, ..4], ..$wk_size],
             initialized: bool
         }
     )
 )
 
-macro_rules! define_aes_2(
+macro_rules! define_aes_impl(
     (
-        $enc_name:ident,
-        $dec_name:ident,
-        $rounds:expr,
-        $wk_size:expr,
-        $key_size:expr
+        $name:ident,
+        $wk_size:expr
     ) => (
-        struct $dec_name {
-            working_key: [[u32, ..4], ..$wk_size],
-            initialized: bool
-        }
-    )
-)
-
-macro_rules! define_aes_3(
-    (
-        $enc_name:ident,
-        $dec_name:ident,
-        $rounds:expr,
-        $wk_size:expr,
-        $key_size:expr
-    ) => (
-        impl $enc_name {
-            pub fn new() -> $enc_name {
-                $enc_name {
+        impl $name {
+            pub fn new() -> $name {
+                $name {
                     working_key: [[0u32, ..4], ..$wk_size],
                     initialized: false
                 }
@@ -84,43 +62,22 @@ macro_rules! define_aes_3(
     )
 )
 
-macro_rules! define_aes_4(
+macro_rules! define_aes_enc(
     (
-        $enc_name:ident,
-        $dec_name:ident,
+        $name:ident,
         $rounds:expr,
-        $wk_size:expr,
         $key_size:expr
     ) => (
-        impl $dec_name {
-            pub fn new() -> $dec_name {
-                $dec_name {
-                    working_key: [[0u32, ..4], ..$wk_size],
-                    initialized: false
-                }
-            }
-        }
-    )
-)
-
-macro_rules! define_aes_5(
-    (
-        $enc_name:ident,
-        $dec_name:ident,
-        $rounds:expr,
-        $wk_size:expr,
-        $key_size:expr
-    ) => (
-        impl SymmetricBlockEncryptor for $enc_name {
+        impl SymmetricBlockEncryptor for $name {
             fn init(&mut self, key: &[u8]) {
                 assert!(key.len() == $key_size);
-                generateWorkingKey(key, true, self.working_key);
+                setup_working_key(key, $rounds, Enryption, self.working_key);
                 self.initialized = true;
             }
 
             fn encrypt(&mut self, in: &[u8], out: &mut [u8]) {
                 assert!(self.initialized);
-                encryptBlock($rounds, in, self.working_key, out);
+                encrypt_block($rounds, in, self.working_key, out);
             }
 
             fn key_size(&self) -> uint { $key_size }
@@ -129,24 +86,22 @@ macro_rules! define_aes_5(
     )
 )
 
-macro_rules! define_aes_6(
+macro_rules! define_aes_dec(
     (
-        $enc_name:ident,
-        $dec_name:ident,
+        $name:ident,
         $rounds:expr,
-        $wk_size:expr,
         $key_size:expr
     ) => (
-        impl SymmetricBlockDecryptor for $dec_name {
+        impl SymmetricBlockDecryptor for $name {
             fn init(&mut self, key: &[u8]) {
                 assert!(key.len() == $key_size);
-                generateWorkingKey(key, false, self.working_key);
+                setup_working_key(key, $rounds, Decryption, self.working_key);
                 self.initialized = true;
             }
 
             fn decrypt(&mut self, in: &[u8], out: &mut [u8]) {
                 assert!(self.initialized);
-                decryptBlock($rounds, in, self.working_key, out);
+                decrypt_block($rounds, in, self.working_key, out);
             }
 
             fn key_size(&self) -> uint { $key_size }
@@ -155,33 +110,33 @@ macro_rules! define_aes_6(
     )
 )
 
-define_aes_1!(Aes128Encrypt, Aes128Decrypt, 10, 11, 16)
-define_aes_2!(Aes128Encrypt, Aes128Decrypt, 10, 11, 16)
-define_aes_3!(Aes128Encrypt, Aes128Decrypt, 10, 11, 16)
-define_aes_4!(Aes128Encrypt, Aes128Decrypt, 10, 11, 16)
-define_aes_5!(Aes128Encrypt, Aes128Decrypt, 10, 11, 16)
-define_aes_6!(Aes128Encrypt, Aes128Decrypt, 10, 11, 16)
+define_aes_struct!(Aes128Encrypt, 11)
+define_aes_struct!(Aes128Decrypt, 11)
+define_aes_impl!(Aes128Encrypt, 11)
+define_aes_impl!(Aes128Decrypt, 11)
+define_aes_enc!(Aes128Encrypt, 10, 16)
+define_aes_dec!(Aes128Decrypt, 10, 16)
 
-define_aes_1!(Aes192Encrypt, Aes192Decrypt, 12, 13, 24)
-define_aes_2!(Aes192Encrypt, Aes192Decrypt, 12, 13, 24)
-define_aes_3!(Aes192Encrypt, Aes192Decrypt, 12, 13, 24)
-define_aes_4!(Aes192Encrypt, Aes192Decrypt, 12, 13, 24)
-define_aes_5!(Aes192Encrypt, Aes192Decrypt, 12, 13, 24)
-define_aes_6!(Aes192Encrypt, Aes192Decrypt, 12, 13, 24)
+define_aes_struct!(Aes192Encrypt, 13)
+define_aes_struct!(Aes192Decrypt, 13)
+define_aes_impl!(Aes192Encrypt, 13)
+define_aes_impl!(Aes192Decrypt, 13)
+define_aes_enc!(Aes192Encrypt, 12, 24)
+define_aes_dec!(Aes192Decrypt, 12, 24)
 
-define_aes_1!(Aes256Encrypt, Aes256Decrypt, 14, 15, 32)
-define_aes_2!(Aes256Encrypt, Aes256Decrypt, 14, 15, 32)
-define_aes_3!(Aes256Encrypt, Aes256Decrypt, 14, 15, 32)
-define_aes_4!(Aes256Encrypt, Aes256Decrypt, 14, 15, 32)
-define_aes_5!(Aes256Encrypt, Aes256Decrypt, 14, 15, 32)
-define_aes_6!(Aes256Encrypt, Aes256Decrypt, 14, 15, 32)
+define_aes_struct!(Aes256Encrypt, 15)
+define_aes_struct!(Aes256Decrypt, 15)
+define_aes_impl!(Aes256Encrypt, 15)
+define_aes_impl!(Aes256Decrypt, 15)
+define_aes_enc!(Aes256Encrypt, 14, 32)
+define_aes_dec!(Aes256Decrypt, 14, 32)
 
 fn shift(r: u32, shift: u32) -> u32 {
     return (r >> shift) | (r << -shift);
 }
 
 // multiply four bytes in GF(2^8) by 'x' {02} in parallel
-fn FFmulX(x: u32) -> u32 {
+fn ffmulx(x: u32) -> u32 {
     static m1: u32 = 0x80808080;
     static m2: u32 = 0x7f7f7f7f;
     static m3: u32 = 0x0000001b;
@@ -190,15 +145,15 @@ fn FFmulX(x: u32) -> u32 {
 }
 
 fn inv_mcol(x: u32) -> u32{
-    let f2 = FFmulX(x);
-    let f4 = FFmulX(f2);
-    let f8 = FFmulX(f4);
+    let f2 = ffmulx(x);
+    let f4 = ffmulx(f2);
+    let f8 = ffmulx(f4);
     let f9 = x ^ f8;
 
     return f2 ^ f4 ^ f8 ^ shift(f2 ^ f9, 8) ^ shift(f4 ^ f9, 16) ^ shift(f9, 24);
 }
 
-fn subWord(x: u32) -> u32 {
+fn sub_word(x: u32) -> u32 {
     return
         (S[x as u8] as u32) |
         ((S[(x >> 8) as u8] as u32) << 8) |
@@ -206,16 +161,14 @@ fn subWord(x: u32) -> u32 {
         ((S[(x >> 24) as u8] as u32) << 24);
 }
 
-// Calculate the necessary round keys
-// The number of calculations depends on key size and block size
-// AES specified a fixed block size of 128 bits and key sizes 128/192/256 bits
-// This code is written assuming those are the only possible values
-fn generateWorkingKey(key: &[u8], forEncryption: bool, W: &mut [[u32, ..4]]) {
-    let KC = key.len() / 4;  // key length in words
+enum KeyType {
+    Enryption,
+    Decryption
+}
 
-    let ROUNDS = KC + 6;  // This is not always true for the generalized Rijndael that allows larger block sizes
+fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, W: &mut [[u32, ..4]]) {
+    let KC = key.len() / 4;
 
-    // copy the key into the round key array
     let mut t = 0;
     for uint::range_step(0, key.len(), 4) |i| {
         W[t >> 2][t & 3] =
@@ -226,30 +179,31 @@ fn generateWorkingKey(key: &[u8], forEncryption: bool, W: &mut [[u32, ..4]]) {
         t += 1;
     }
 
-    // while not enough round key material calculated
-    // calculate new values
-    let k = (ROUNDS + 1) << 2;
+    let k = (rounds + 1) << 2;
     for uint::range(KC, k) |i| {
         let mut temp = W[(i - 1) >> 2][(i - 1) & 3];
         if ((i % KC) == 0) {
-            temp = subWord(shift(temp, 8)) ^ rcon[(i / KC) - 1];
+            temp = sub_word(shift(temp, 8)) ^ rcon[(i / KC) - 1];
         } else if ((KC > 6) && ((i % KC) == 4)) {
-            temp = subWord(temp);
+            temp = sub_word(temp);
         }
 
         W[i >> 2][i & 3] = W[(i - KC) >> 2][(i - KC) & 3] ^ temp;
     }
 
-    if (!forEncryption) {
-        for uint::range(1, ROUNDS) |j| {
-            for uint::range(0, 4) |i| {
-                W[j][i] = inv_mcol(W[j][i]);
+    match key_type {
+        Decryption => {
+            for uint::range(1, rounds) |j| {
+                for uint::range(0, 4) |i| {
+                    W[j][i] = inv_mcol(W[j][i]);
+                }
             }
-        }
+        },
+        Enryption => { }
     }
 }
 
-fn unpackBlock(in: &[u8]) -> (u32, u32, u32, u32) {
+fn unpack(in: &[u8]) -> (u32, u32, u32, u32) {
     let C0 =
         (in[0] as u32) |
         (in[1] as u32) << 8 |
@@ -277,7 +231,7 @@ fn unpackBlock(in: &[u8]) -> (u32, u32, u32, u32) {
     return (C0, C1, C2, C3);
 }
 
-fn packBlock(C0: u32, C1: u32, C2: u32, C3: u32, out: &mut [u8]) {
+fn pack(C0: u32, C1: u32, C2: u32, C3: u32, out: &mut [u8]) {
     out[0] = C0 as u8;
     out[1] = (C0 >> 8) as u8;
     out[2] = (C0 >> 16) as u8;
@@ -299,8 +253,8 @@ fn packBlock(C0: u32, C1: u32, C2: u32, C3: u32, out: &mut [u8]) {
     out[15] = (C3 >> 24) as u8;
 }
 
-fn encryptBlock(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
-    let mut (C0, C1, C2, C3) = unpackBlock(in);
+fn encrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
+    let mut (C0, C1, C2, C3) = unpack(in);
 
     C0 ^= KW[0][0];
     C1 ^= KW[0][1];
@@ -337,12 +291,12 @@ fn encryptBlock(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
     C2 = (S[r2 & 0xff] as u32) ^ ((S[(r3>>8) & 0xff] as u32)<<8) ^ ((S[(r0>>16) & 0xff] as u32)<<16) ^ ((S[(r1>>24) & 0xff] as u32)<<24) ^ KW[r][2];
     C3 = (S[r3 & 0xff] as u32) ^ ((S[(r0>>8) & 0xff] as u32)<<8) ^ ((S[(r1>>16) & 0xff] as u32)<<16) ^ ((S[(r2>>24) & 0xff] as u32)<<24) ^ KW[r][3];
 
-    packBlock(C0, C1, C2, C3, out);
+    pack(C0, C1, C2, C3, out);
 }
 
 
-fn decryptBlock(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
-    let mut (C0, C1, C2, C3) = unpackBlock(in);
+fn decrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
+    let mut (C0, C1, C2, C3) = unpack(in);
 
     C0 ^= KW[rounds][0];
     C1 ^= KW[rounds][1];
@@ -378,103 +332,7 @@ fn decryptBlock(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
     C2 = (Si[r2 & 0xff] as u32) ^ ((Si[(r1>>8) & 0xff] as u32)<<8) ^ ((Si[(r0>>16) & 0xff] as u32)<<16) ^ ((Si[(r3>>24) & 0xff] as u32)<<24) ^ KW[0][2];
     C3 = (Si[r3 & 0xff] as u32) ^ ((Si[(r2>>8) & 0xff] as u32)<<8) ^ ((Si[(r1>>16) & 0xff] as u32)<<16) ^ ((Si[(r0>>24) & 0xff] as u32)<<24) ^ KW[0][3];
 
-    packBlock(C0, C1, C2, C3, out);
-}
-
-fn to_hex(rr: &[u8]) -> ~str {
-    let mut s = ~"";
-    for rr.iter().advance() |b| {
-        let hex = uint::to_str_radix(*b as uint, 16u);
-        if hex.len() == 1 {
-            s += "0";
-        }
-        s += hex;
-    }
-    return s;
-}
-
-struct timespec {
-    tv_sec: time_t,
-    tv_nsec: c_long
-}
-
-type clockid_t = i32;
-
-static CLOCK_MONOTONIC: clockid_t = 1;
-
-extern {
-    unsafe fn clock_gettime(clk_id: clockid_t, tp: *timespec) -> c_int;
-}
-
-fn get_ns() -> i64 {
-    let ts = timespec {tv_sec: 0, tv_nsec: 0};
-    unsafe { clock_gettime(CLOCK_MONOTONIC, &ts); }
-    return ts.tv_sec * 1_000_000_000 + ts.tv_nsec;
-}
-
-fn main() {
-    use std::vec;
-
-//    trace_macros!(true);
-//    define_aes!(Aes128Encrypt, Aes128Decrypt, 10, 11, 16);
-
-//    let key: [u8, ..16] = [0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c];
-//    let key: [u8, ..24] = [0x8e, 0x73, 0xb0, 0xf7, 0xda, 0x0e, 0x64, 0x52, 0xc8, 0x10, 0xf3, 0x2b, 0x80, 0x90, 0x79, 0xe5, 0x62, 0xf8, 0xea, 0xd2, 0x52, 0x2c, 0x6b, 0x7b];
-    let key: [u8, ..32] = [0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe, 0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81, 0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7, 0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4];
-    let plain: [u8, ..16] = [0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a];
-    let cipher: [u8, ..16] = [0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60, 0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97];
-
-    let mut out1: [u8, ..16] = [0u8, ..16];
-    let mut out2: [u8, ..16] = [0u8, ..16];
-/*
-    let mut enc = Aes128 { working_key: [[0u32, ..4], ..11] };
-    generateWorkingKey(key, true, enc.working_key);
-
-    let mut dec = Aes128 { working_key: [[0u32, ..4], ..11] };
-    generateWorkingKey(key, false, dec.working_key);
-
-    let start_ns = get_ns();
-
-    let count = 50000000;
-
-    for uint::range(0, count) |_| {
-        encryptBlock(10, plain, enc.working_key, out1);
-//        decryptBlock(10, out1, dec.working_key, out2);
-    }
-
-    let end_ns = get_ns();
-*/
-
-    let mut enc = Aes256Encrypt::new();
-    enc.init(key);
-
-    let mut dec = Aes256Decrypt::new();
-    dec.init(key);
-
-    let start_ns = get_ns();
-
-    let count = 10000000;
-
-    for uint::range(0, count) |_| {
-        enc.encrypt(plain, out1);
-        dec.decrypt(out1, out2);
-    }
-
-    let end_ns = get_ns();
-
-    let total_ns = (end_ns - start_ns);
-    println(fmt!("time (ns): %?", total_ns));
-    let total_ms = (end_ns - start_ns) / 1_000_000;
-    println(fmt!("time (ms): %?", total_ms));
-    let size_mb = count * plain.len() / 1024 / 1024;
-    println(fmt!("size (mb): %?", size_mb));
-    println(fmt!("size (mb/s): %?", (size_mb as f64) / (total_ms as f64) * 1000f64 ));
-
-    println(to_hex(plain));
-    println(to_hex(out1));
-    println(to_hex(out2));
-
-    assert!(vec::eq(out2, plain));
+    pack(C0, C1, C2, C3, out);
 }
 
 // The S box
@@ -997,3 +855,173 @@ static Tinv3: [u32, ..256] = [
     0xd89ce4b4, 0x6490c156, 0x7b6184cb, 0xd570b632, 0x48745c6c,
     0xd04257b8
 ];
+
+
+#[cfg(test)]
+mod test {
+    use std::vec;
+
+    use aes::*;
+
+    // Test vectors from:
+    // http://www.inconteam.com/software-development/41-encryption/55-aes-test-vectors
+
+    struct Test {
+        key: ~[u8],
+        data: ~[TestData]
+    }
+
+    struct TestData {
+        plain: ~[u8],
+        cipher: ~[u8]
+    }
+
+    fn run_test<E: SymmetricBlockEncryptor, D: SymmetricBlockDecryptor>(
+            test: &Test,
+            enc: &mut E,
+            dec: &mut D) {
+        enc.init(test.key);
+        dec.init(test.key);
+
+        let mut tmp = [0u8, ..16];
+
+        for test.data.iter().advance() |data| {
+            enc.encrypt(data.plain, tmp);
+            assert!(vec::eq(tmp, data.cipher));
+            dec.decrypt(data.cipher, tmp);
+            assert!(vec::eq(tmp, data.plain));
+        }
+    }
+
+    #[test]
+    fn testAes128() {
+        let tests = ~[
+            Test {
+                key: ~[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+                       0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c],
+                data: ~[
+                    TestData {
+                        plain:  ~[0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+                                  0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a],
+                        cipher: ~[0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60,
+                                  0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97]
+                    },
+                    TestData {
+                        plain:  ~[0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+                                  0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51],
+                        cipher: ~[0xf5, 0xd3, 0xd5, 0x85, 0x03, 0xb9, 0x69, 0x9d,
+                                  0xe7, 0x85, 0x89, 0x5a, 0x96, 0xfd, 0xba, 0xaf]
+                    },
+                    TestData {
+                        plain:  ~[0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11,
+                                  0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef],
+                        cipher: ~[0x43, 0xb1, 0xcd, 0x7f, 0x59, 0x8e, 0xce, 0x23,
+                                  0x88, 0x1b, 0x00, 0xe3, 0xed, 0x03, 0x06, 0x88]
+                    },
+                    TestData {
+                        plain:  ~[0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17,
+                                  0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10],
+                        cipher: ~[0x7b, 0x0c, 0x78, 0x5e, 0x27, 0xe8, 0xad, 0x3f,
+                                  0x82, 0x23, 0x20, 0x71, 0x04, 0x72, 0x5d, 0xd4]
+                    }
+                ]
+            }
+        ];
+
+
+        let mut enc = Aes128Encrypt::new();
+        let mut dec = Aes128Decrypt::new();
+
+        for tests.iter().advance() |t| {
+            run_test(t, &mut enc, &mut dec);
+        }
+    }
+
+    #[test]
+    fn testAes192() {
+        let tests = ~[
+            Test {
+                key: ~[0x8e, 0x73, 0xb0, 0xf7, 0xda, 0x0e, 0x64, 0x52, 0xc8, 0x10, 0xf3, 0x2b,
+                       0x80, 0x90, 0x79, 0xe5, 0x62, 0xf8, 0xea, 0xd2, 0x52, 0x2c, 0x6b, 0x7b],
+                data: ~[
+                    TestData {
+                        plain:  ~[0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+                                  0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a],
+                        cipher: ~[0xbd, 0x33, 0x4f, 0x1d, 0x6e, 0x45, 0xf2, 0x5f,
+                                  0xf7, 0x12, 0xa2, 0x14, 0x57, 0x1f, 0xa5, 0xcc]
+                    },
+                    TestData {
+                        plain:  ~[0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+                                  0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51],
+                        cipher: ~[0x97, 0x41, 0x04, 0x84, 0x6d, 0x0a, 0xd3, 0xad,
+                                  0x77, 0x34, 0xec, 0xb3, 0xec, 0xee, 0x4e, 0xef]
+                    },
+                    TestData {
+                        plain:  ~[0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11,
+                                  0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef],
+                        cipher: ~[0xef, 0x7a, 0xfd, 0x22, 0x70, 0xe2, 0xe6, 0x0a,
+                                  0xdc, 0xe0, 0xba, 0x2f, 0xac, 0xe6, 0x44, 0x4e]
+                    },
+                    TestData {
+                        plain:  ~[0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17,
+                                  0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10],
+                        cipher: ~[0x9a, 0x4b, 0x41, 0xba, 0x73, 0x8d, 0x6c, 0x72,
+                                  0xfb, 0x16, 0x69, 0x16, 0x03, 0xc1, 0x8e, 0x0e]
+                    }
+                ]
+            }
+        ];
+
+        let mut enc = Aes192Encrypt::new();
+        let mut dec = Aes192Decrypt::new();
+
+        for tests.iter().advance() |t| {
+            run_test(t, &mut enc, &mut dec);
+        }
+    }
+
+    #[test]
+    fn testAes256() {
+        let tests = ~[
+            Test {
+                key: ~[0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
+                       0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+                       0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+                       0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4],
+                data: ~[
+                    TestData {
+                        plain:  ~[0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
+                                  0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a],
+                        cipher: ~[0xf3, 0xee, 0xd1, 0xbd, 0xb5, 0xd2, 0xa0, 0x3c,
+                                  0x06, 0x4b, 0x5a, 0x7e, 0x3d, 0xb1, 0x81, 0xf8]
+                    },
+                    TestData {
+                        plain:  ~[0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
+                                  0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51],
+                        cipher: ~[0x59, 0x1c, 0xcb, 0x10, 0xd4, 0x10, 0xed, 0x26,
+                                  0xdc, 0x5b, 0xa7, 0x4a, 0x31, 0x36, 0x28, 0x70]
+                    },
+                    TestData {
+                        plain:  ~[0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11,
+                                  0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef],
+                        cipher: ~[0xb6, 0xed, 0x21, 0xb9, 0x9c, 0xa6, 0xf4, 0xf9,
+                                  0xf1, 0x53, 0xe7, 0xb1, 0xbe, 0xaf, 0xed, 0x1d]
+                    },
+                    TestData {
+                        plain:  ~[0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17,
+                                  0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10],
+                        cipher: ~[0x23, 0x30, 0x4b, 0x7a, 0x39, 0xf9, 0xf3, 0xff,
+                                  0x06, 0x7d, 0x8d, 0x8f, 0x9e, 0x24, 0xec, 0xc7]
+                    }
+                ]
+            }
+        ];
+
+        let mut enc = Aes256Encrypt::new();
+        let mut dec = Aes256Decrypt::new();
+
+        for tests.iter().advance() |t| {
+            run_test(t, &mut enc, &mut dec);
+        }
+    }
+}
