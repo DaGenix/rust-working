@@ -265,16 +265,24 @@ fn encrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
 
     let mut r = 1;
     while (r < rounds - 1) {
-        r0 = T0[C0 & 0xff] ^ T1[(C1>>8) & 0xff] ^ T2[(C2>>16) & 0xff] ^ T3[(C3>>24) & 0xff] ^ KW[r][0];
-        r1 = T0[C1 & 0xff] ^ T1[(C2>>8) & 0xff] ^ T2[(C3>>16) & 0xff] ^ T3[(C0>>24) & 0xff] ^ KW[r][1];
-        r2 = T0[C2 & 0xff] ^ T1[(C3>>8) & 0xff] ^ T2[(C0>>16) & 0xff] ^ T3[(C1>>24) & 0xff] ^ KW[r][2];
-        r3 = T0[C3 & 0xff] ^ T1[(C0>>8) & 0xff] ^ T2[(C1>>16) & 0xff] ^ T3[(C2>>24) & 0xff] ^ KW[r][3];
+        r0 = T0[C0 & 0xff] ^ T1[(C1>>8) & 0xff] ^
+             T2[(C2>>16) & 0xff] ^ T3[(C3>>24) & 0xff] ^ KW[r][0];
+        r1 = T0[C1 & 0xff] ^ T1[(C2>>8) & 0xff] ^
+             T2[(C3>>16) & 0xff] ^ T3[(C0>>24) & 0xff] ^ KW[r][1];
+        r2 = T0[C2 & 0xff] ^ T1[(C3>>8) & 0xff] ^
+             T2[(C0>>16) & 0xff] ^ T3[(C1>>24) & 0xff] ^ KW[r][2];
+        r3 = T0[C3 & 0xff] ^ T1[(C0>>8) & 0xff] ^
+             T2[(C1>>16) & 0xff] ^ T3[(C2>>24) & 0xff] ^ KW[r][3];
         r += 1;
 
-        C0 = T0[r0 & 0xff] ^ T1[(r1>>8) & 0xff] ^ T2[(r2>>16) & 0xff] ^ T3[(r3>>24) & 0xff] ^ KW[r][0];
-        C1 = T0[r1 & 0xff] ^ T1[(r2>>8) & 0xff] ^ T2[(r3>>16) & 0xff] ^ T3[(r0>>24) & 0xff] ^ KW[r][1];
-        C2 = T0[r2 & 0xff] ^ T1[(r3>>8) & 0xff] ^ T2[(r0>>16) & 0xff] ^ T3[(r1>>24) & 0xff] ^ KW[r][2];
-        C3 = T0[r3 & 0xff] ^ T1[(r0>>8) & 0xff] ^ T2[(r1>>16) & 0xff] ^ T3[(r2>>24) & 0xff] ^ KW[r][3];
+        C0 = T0[r0 & 0xff] ^ T1[(r1>>8) & 0xff] ^
+             T2[(r2>>16) & 0xff] ^ T3[(r3>>24) & 0xff] ^ KW[r][0];
+        C1 = T0[r1 & 0xff] ^ T1[(r2>>8) & 0xff] ^
+             T2[(r3>>16) & 0xff] ^ T3[(r0>>24) & 0xff] ^ KW[r][1];
+        C2 = T0[r2 & 0xff] ^ T1[(r3>>8) & 0xff] ^
+             T2[(r0>>16) & 0xff] ^ T3[(r1>>24) & 0xff] ^ KW[r][2];
+        C3 = T0[r3 & 0xff] ^ T1[(r0>>8) & 0xff] ^
+             T2[(r1>>16) & 0xff] ^ T3[(r2>>24) & 0xff] ^ KW[r][3];
         r += 1;
     }
 
@@ -284,12 +292,14 @@ fn encrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
     r3 = T0[C3 & 0xff] ^ T1[(C0>>8) & 0xff] ^ T2[(C1>>16) & 0xff] ^ T3[(C2>>24) & 0xff] ^ KW[r][3];
     r += 1;
 
-    // the final round's table is a simple function of S so we don't use a whole other four tables for it
-
-    C0 = (S[r0 & 0xff] as u32) ^ ((S[(r1>>8) & 0xff] as u32)<<8) ^ ((S[(r2>>16) & 0xff] as u32)<<16) ^ ((S[(r3>>24) & 0xff] as u32)<<24) ^ KW[r][0];
-    C1 = (S[r1 & 0xff] as u32) ^ ((S[(r2>>8) & 0xff] as u32)<<8) ^ ((S[(r3>>16) & 0xff] as u32)<<16) ^ ((S[(r0>>24) & 0xff] as u32)<<24) ^ KW[r][1];
-    C2 = (S[r2 & 0xff] as u32) ^ ((S[(r3>>8) & 0xff] as u32)<<8) ^ ((S[(r0>>16) & 0xff] as u32)<<16) ^ ((S[(r1>>24) & 0xff] as u32)<<24) ^ KW[r][2];
-    C3 = (S[r3 & 0xff] as u32) ^ ((S[(r0>>8) & 0xff] as u32)<<8) ^ ((S[(r1>>16) & 0xff] as u32)<<16) ^ ((S[(r2>>24) & 0xff] as u32)<<24) ^ KW[r][3];
+    C0 = (S[r0 & 0xff] as u32) ^ ((S[(r1>>8) & 0xff] as u32)<<8) ^
+         ((S[(r2>>16) & 0xff] as u32)<<16) ^ ((S[(r3>>24) & 0xff] as u32)<<24) ^ KW[r][0];
+    C1 = (S[r1 & 0xff] as u32) ^ ((S[(r2>>8) & 0xff] as u32)<<8) ^
+         ((S[(r3>>16) & 0xff] as u32)<<16) ^ ((S[(r0>>24) & 0xff] as u32)<<24) ^ KW[r][1];
+    C2 = (S[r2 & 0xff] as u32) ^ ((S[(r3>>8) & 0xff] as u32)<<8) ^
+         ((S[(r0>>16) & 0xff] as u32)<<16) ^ ((S[(r1>>24) & 0xff] as u32)<<24) ^ KW[r][2];
+    C3 = (S[r3 & 0xff] as u32) ^ ((S[(r0>>8) & 0xff] as u32)<<8) ^
+         ((S[(r1>>16) & 0xff] as u32)<<16) ^ ((S[(r2>>24) & 0xff] as u32)<<24) ^ KW[r][3];
 
     pack(C0, C1, C2, C3, out);
 }
@@ -307,30 +317,44 @@ fn decrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
 
     let mut r = rounds - 1;
     while (r > 1) {
-        r0 = Tinv0[C0& 0xff] ^ Tinv1[(C3>>8)& 0xff] ^ Tinv2[(C2>>16)& 0xff] ^ Tinv3[(C1>>24)& 0xff] ^ KW[r][0];
-        r1 = Tinv0[C1& 0xff] ^ Tinv1[(C0>>8)& 0xff] ^ Tinv2[(C3>>16)& 0xff] ^ Tinv3[(C2>>24)& 0xff] ^ KW[r][1];
-        r2 = Tinv0[C2& 0xff] ^ Tinv1[(C1>>8)& 0xff] ^ Tinv2[(C0>>16)& 0xff] ^ Tinv3[(C3>>24)& 0xff] ^ KW[r][2];
-        r3 = Tinv0[C3& 0xff] ^ Tinv1[(C2>>8)& 0xff] ^ Tinv2[(C1>>16)& 0xff] ^ Tinv3[(C0>>24)& 0xff] ^ KW[r][3];
+        r0 = Tinv0[C0& 0xff] ^ Tinv1[(C3>>8)& 0xff] ^
+             Tinv2[(C2>>16)& 0xff] ^ Tinv3[(C1>>24)& 0xff] ^ KW[r][0];
+        r1 = Tinv0[C1& 0xff] ^ Tinv1[(C0>>8)& 0xff] ^
+             Tinv2[(C3>>16)& 0xff] ^ Tinv3[(C2>>24)& 0xff] ^ KW[r][1];
+        r2 = Tinv0[C2& 0xff] ^ Tinv1[(C1>>8)& 0xff] ^
+             Tinv2[(C0>>16)& 0xff] ^ Tinv3[(C3>>24)& 0xff] ^ KW[r][2];
+        r3 = Tinv0[C3& 0xff] ^ Tinv1[(C2>>8)& 0xff] ^
+             Tinv2[(C1>>16)& 0xff] ^ Tinv3[(C0>>24)& 0xff] ^ KW[r][3];
         r -= 1;
 
-        C0 = Tinv0[r0& 0xff] ^ Tinv1[(r3>>8)& 0xff] ^ Tinv2[(r2>>16)& 0xff] ^ Tinv3[(r1>>24)& 0xff] ^ KW[r][0];
-        C1 = Tinv0[r1& 0xff] ^ Tinv1[(r0>>8)& 0xff] ^ Tinv2[(r3>>16)& 0xff] ^ Tinv3[(r2>>24)& 0xff] ^ KW[r][1];
-        C2 = Tinv0[r2& 0xff] ^ Tinv1[(r1>>8)& 0xff] ^ Tinv2[(r0>>16)& 0xff] ^ Tinv3[(r3>>24)& 0xff] ^ KW[r][2];
-        C3 = Tinv0[r3& 0xff] ^ Tinv1[(r2>>8)& 0xff] ^ Tinv2[(r1>>16)& 0xff] ^ Tinv3[(r0>>24)& 0xff] ^ KW[r][3];
+        C0 = Tinv0[r0& 0xff] ^ Tinv1[(r3>>8)& 0xff] ^
+             Tinv2[(r2>>16)& 0xff] ^ Tinv3[(r1>>24)& 0xff] ^ KW[r][0];
+        C1 = Tinv0[r1& 0xff] ^ Tinv1[(r0>>8)& 0xff] ^
+             Tinv2[(r3>>16)& 0xff] ^ Tinv3[(r2>>24)& 0xff] ^ KW[r][1];
+        C2 = Tinv0[r2& 0xff] ^ Tinv1[(r1>>8)& 0xff] ^
+             Tinv2[(r0>>16)& 0xff] ^ Tinv3[(r3>>24)& 0xff] ^ KW[r][2];
+        C3 = Tinv0[r3& 0xff] ^ Tinv1[(r2>>8)& 0xff] ^
+             Tinv2[(r1>>16)& 0xff] ^ Tinv3[(r0>>24)& 0xff] ^ KW[r][3];
         r -= 1;
     }
 
-    r0 = Tinv0[C0& 0xff] ^ Tinv1[(C3>>8)& 0xff] ^ Tinv2[(C2>>16)& 0xff] ^ Tinv3[(C1>>24)& 0xff] ^ KW[r][0];
-    r1 = Tinv0[C1& 0xff] ^ Tinv1[(C0>>8)& 0xff] ^ Tinv2[(C3>>16)& 0xff] ^ Tinv3[(C2>>24)& 0xff] ^ KW[r][1];
-    r2 = Tinv0[C2& 0xff] ^ Tinv1[(C1>>8)& 0xff] ^ Tinv2[(C0>>16)& 0xff] ^ Tinv3[(C3>>24)& 0xff] ^ KW[r][2];
-    r3 = Tinv0[C3& 0xff] ^ Tinv1[(C2>>8)& 0xff] ^ Tinv2[(C1>>16)& 0xff] ^ Tinv3[(C0>>24)& 0xff] ^ KW[r][3];
+    r0 = Tinv0[C0& 0xff] ^ Tinv1[(C3>>8)& 0xff] ^
+         Tinv2[(C2>>16)& 0xff] ^ Tinv3[(C1>>24)& 0xff] ^ KW[r][0];
+    r1 = Tinv0[C1& 0xff] ^ Tinv1[(C0>>8)& 0xff] ^
+         Tinv2[(C3>>16)& 0xff] ^ Tinv3[(C2>>24)& 0xff] ^ KW[r][1];
+    r2 = Tinv0[C2& 0xff] ^ Tinv1[(C1>>8)& 0xff] ^
+         Tinv2[(C0>>16)& 0xff] ^ Tinv3[(C3>>24)& 0xff] ^ KW[r][2];
+    r3 = Tinv0[C3& 0xff] ^ Tinv1[(C2>>8)& 0xff] ^
+         Tinv2[(C1>>16)& 0xff] ^ Tinv3[(C0>>24)& 0xff] ^ KW[r][3];
 
-    // the final round's table is a simple function of Si so we don't use a whole other four tables for it
-
-    C0 = (Si[r0 & 0xff] as u32) ^ ((Si[(r3>>8) & 0xff] as u32)<<8) ^ ((Si[(r2>>16) & 0xff] as u32)<<16) ^ ((Si[(r1>>24) & 0xff] as u32)<<24) ^ KW[0][0];
-    C1 = (Si[r1 & 0xff] as u32) ^ ((Si[(r0>>8) & 0xff] as u32)<<8) ^ ((Si[(r3>>16) & 0xff] as u32)<<16) ^ ((Si[(r2>>24) & 0xff] as u32)<<24) ^ KW[0][1];
-    C2 = (Si[r2 & 0xff] as u32) ^ ((Si[(r1>>8) & 0xff] as u32)<<8) ^ ((Si[(r0>>16) & 0xff] as u32)<<16) ^ ((Si[(r3>>24) & 0xff] as u32)<<24) ^ KW[0][2];
-    C3 = (Si[r3 & 0xff] as u32) ^ ((Si[(r2>>8) & 0xff] as u32)<<8) ^ ((Si[(r1>>16) & 0xff] as u32)<<16) ^ ((Si[(r0>>24) & 0xff] as u32)<<24) ^ KW[0][3];
+    C0 = (Si[r0 & 0xff] as u32) ^ ((Si[(r3>>8) & 0xff] as u32)<<8) ^
+         ((Si[(r2>>16) & 0xff] as u32)<<16) ^ ((Si[(r1>>24) & 0xff] as u32)<<24) ^ KW[0][0];
+    C1 = (Si[r1 & 0xff] as u32) ^ ((Si[(r0>>8) & 0xff] as u32)<<8) ^
+         ((Si[(r3>>16) & 0xff] as u32)<<16) ^ ((Si[(r2>>24) & 0xff] as u32)<<24) ^ KW[0][1];
+    C2 = (Si[r2 & 0xff] as u32) ^ ((Si[(r1>>8) & 0xff] as u32)<<8) ^
+         ((Si[(r0>>16) & 0xff] as u32)<<16) ^ ((Si[(r3>>24) & 0xff] as u32)<<24) ^ KW[0][2];
+    C3 = (Si[r3 & 0xff] as u32) ^ ((Si[(r2>>8) & 0xff] as u32)<<8) ^
+         ((Si[(r1>>16) & 0xff] as u32)<<16) ^ ((Si[(r0>>24) & 0xff] as u32)<<24) ^ KW[0][3];
 
     pack(C0, C1, C2, C3, out);
 }
