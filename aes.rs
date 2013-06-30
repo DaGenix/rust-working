@@ -268,24 +268,54 @@ fn encrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
 
     let mut r = 1;
     while (r < rounds - 1) {
-        r0 = T0[C0 & 0xff] ^ T1[(C1>>8) & 0xff] ^
-             T2[(C2>>16) & 0xff] ^ T3[(C3>>24) & 0xff] ^ KW[r][0];
-        r1 = T0[C1 & 0xff] ^ T1[(C2>>8) & 0xff] ^
-             T2[(C3>>16) & 0xff] ^ T3[(C0>>24) & 0xff] ^ KW[r][1];
-        r2 = T0[C2 & 0xff] ^ T1[(C3>>8) & 0xff] ^
-             T2[(C0>>16) & 0xff] ^ T3[(C1>>24) & 0xff] ^ KW[r][2];
-        r3 = T0[C3 & 0xff] ^ T1[(C0>>8) & 0xff] ^
-             T2[(C1>>16) & 0xff] ^ T3[(C2>>24) & 0xff] ^ KW[r][3];
+        r0 = T0[C0 & 0xff];
+        r0 ^= T1[(C1>>8) & 0xff];
+        r0 ^= T2[(C2>>16) & 0xff];
+        r0 ^= T3[(C3>>24) & 0xff];
+        r0 ^= KW[r][0];
+
+        r1 = T0[C1 & 0xff];
+        r1 ^= T1[(C2>>8) & 0xff];
+        r1 ^= T2[(C3>>16) & 0xff];
+        r1 ^= T3[(C0>>24) & 0xff];
+        r1 ^= KW[r][1];
+
+        r2 = T0[C2 & 0xff];
+        r2 ^= T1[(C3>>8) & 0xff];
+        r2 ^= T2[(C0>>16) & 0xff];
+        r2 ^= T3[(C1>>24) & 0xff];
+        r2 ^= KW[r][2];
+
+        r3 = T0[C3 & 0xff];
+        r3 ^= T1[(C0>>8) & 0xff];
+        r3 ^= T2[(C1>>16) & 0xff];
+        r3 ^= T3[(C2>>24) & 0xff];
+        r3 ^= KW[r][3];
         r += 1;
 
-        C0 = T0[r0 & 0xff] ^ T1[(r1>>8) & 0xff] ^
-             T2[(r2>>16) & 0xff] ^ T3[(r3>>24) & 0xff] ^ KW[r][0];
-        C1 = T0[r1 & 0xff] ^ T1[(r2>>8) & 0xff] ^
-             T2[(r3>>16) & 0xff] ^ T3[(r0>>24) & 0xff] ^ KW[r][1];
-        C2 = T0[r2 & 0xff] ^ T1[(r3>>8) & 0xff] ^
-             T2[(r0>>16) & 0xff] ^ T3[(r1>>24) & 0xff] ^ KW[r][2];
-        C3 = T0[r3 & 0xff] ^ T1[(r0>>8) & 0xff] ^
-             T2[(r1>>16) & 0xff] ^ T3[(r2>>24) & 0xff] ^ KW[r][3];
+        C0 = T0[r0 & 0xff];
+        C0 ^= T1[(r1>>8) & 0xff];
+        C0 ^= T2[(r2>>16) & 0xff];
+        C0 ^= T3[(r3>>24) & 0xff];
+        C0 ^= KW[r][0];
+
+        C1 = T0[r1 & 0xff];
+        C1 ^= T1[(r2>>8) & 0xff];
+        C1 ^= T2[(r3>>16) & 0xff];
+        C1 ^= T3[(r0>>24) & 0xff];
+        C1 ^= KW[r][1];
+
+        C2 = T0[r2 & 0xff];
+        C2 ^= T1[(r3>>8) & 0xff];
+        C2 ^= T2[(r0>>16) & 0xff];
+        C2 ^= T3[(r1>>24) & 0xff];
+        C2 ^= KW[r][2];
+
+        C3 = T0[r3 & 0xff];
+        C3 ^= T1[(r0>>8) & 0xff];
+        C3 ^= T2[(r1>>16) & 0xff];
+        C3 ^= T3[(r2>>24) & 0xff];
+        C3 ^= KW[r][3];
         r += 1;
     }
 
@@ -295,14 +325,29 @@ fn encrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
     r3 = T0[C3 & 0xff] ^ T1[(C0>>8) & 0xff] ^ T2[(C1>>16) & 0xff] ^ T3[(C2>>24) & 0xff] ^ KW[r][3];
     r += 1;
 
-    C0 = (S[r0 & 0xff] as u32) ^ ((S[(r1>>8) & 0xff] as u32)<<8) ^
-         ((S[(r2>>16) & 0xff] as u32)<<16) ^ ((S[(r3>>24) & 0xff] as u32)<<24) ^ KW[r][0];
-    C1 = (S[r1 & 0xff] as u32) ^ ((S[(r2>>8) & 0xff] as u32)<<8) ^
-         ((S[(r3>>16) & 0xff] as u32)<<16) ^ ((S[(r0>>24) & 0xff] as u32)<<24) ^ KW[r][1];
-    C2 = (S[r2 & 0xff] as u32) ^ ((S[(r3>>8) & 0xff] as u32)<<8) ^
-         ((S[(r0>>16) & 0xff] as u32)<<16) ^ ((S[(r1>>24) & 0xff] as u32)<<24) ^ KW[r][2];
-    C3 = (S[r3 & 0xff] as u32) ^ ((S[(r0>>8) & 0xff] as u32)<<8) ^
-         ((S[(r1>>16) & 0xff] as u32)<<16) ^ ((S[(r2>>24) & 0xff] as u32)<<24) ^ KW[r][3];
+    C0 = (S[r0 & 0xff] as u32);
+    C0 ^= ((S[(r1>>8) & 0xff] as u32)<<8);
+    C0 ^= ((S[(r2>>16) & 0xff] as u32)<<16);
+    C0 ^= ((S[(r3>>24) & 0xff] as u32)<<24);
+    C0 ^= KW[r][0];
+
+    C1 = (S[r1 & 0xff] as u32);
+    C1 ^= ((S[(r2>>8) & 0xff] as u32)<<8);
+    C1 ^= ((S[(r3>>16) & 0xff] as u32)<<16);
+    C1 ^= ((S[(r0>>24) & 0xff] as u32)<<24);
+    C1 ^= KW[r][1];
+
+    C2 = (S[r2 & 0xff] as u32);
+    C2 ^= ((S[(r3>>8) & 0xff] as u32)<<8);
+    C2 ^= ((S[(r0>>16) & 0xff] as u32)<<16);
+    C2 ^= ((S[(r1>>24) & 0xff] as u32)<<24);
+    C2 ^= KW[r][2];
+
+    C3 = (S[r3 & 0xff] as u32);
+    C3 ^= ((S[(r0>>8) & 0xff] as u32)<<8);
+    C3 ^= ((S[(r1>>16) & 0xff] as u32)<<16);
+    C3 ^= ((S[(r2>>24) & 0xff] as u32)<<24);
+    C3 ^= KW[r][3];
 
     pack(C0, C1, C2, C3, out);
 }
@@ -327,44 +372,104 @@ fn decrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
 
     let mut r = rounds - 1;
     while (r > 1) {
-        r0 = Tinv0[C0& 0xff] ^ Tinv1[(C3>>8)& 0xff] ^
-             Tinv2[(C2>>16)& 0xff] ^ Tinv3[(C1>>24)& 0xff] ^ KW[r][0];
-        r1 = Tinv0[C1& 0xff] ^ Tinv1[(C0>>8)& 0xff] ^
-             Tinv2[(C3>>16)& 0xff] ^ Tinv3[(C2>>24)& 0xff] ^ KW[r][1];
-        r2 = Tinv0[C2& 0xff] ^ Tinv1[(C1>>8)& 0xff] ^
-             Tinv2[(C0>>16)& 0xff] ^ Tinv3[(C3>>24)& 0xff] ^ KW[r][2];
-        r3 = Tinv0[C3& 0xff] ^ Tinv1[(C2>>8)& 0xff] ^
-             Tinv2[(C1>>16)& 0xff] ^ Tinv3[(C0>>24)& 0xff] ^ KW[r][3];
+        r0 = Tinv0[C0& 0xff];
+        r0 ^= Tinv1[(C3>>8)& 0xff];
+        r0 ^= Tinv2[(C2>>16)& 0xff];
+        r0 ^= Tinv3[(C1>>24)& 0xff];
+        r0 ^= KW[r][0];
+
+        r1 = Tinv0[C1& 0xff];
+        r1 ^= Tinv1[(C0>>8)& 0xff];
+        r1 ^= Tinv2[(C3>>16)& 0xff];
+        r1 ^= Tinv3[(C2>>24)& 0xff];
+        r1 ^= KW[r][1];
+
+        r2 = Tinv0[C2& 0xff];
+        r2 ^= Tinv1[(C1>>8)& 0xff];
+        r2 ^= Tinv2[(C0>>16)& 0xff];
+        r2 ^= Tinv3[(C3>>24)& 0xff];
+        r2 ^= KW[r][2];
+
+        r3 = Tinv0[C3& 0xff];
+        r3 ^= Tinv1[(C2>>8)& 0xff];
+        r3 ^= Tinv2[(C1>>16)& 0xff];
+        r3 ^= Tinv3[(C0>>24)& 0xff];
+        r3 ^= KW[r][3];
         r -= 1;
 
-        C0 = Tinv0[r0& 0xff] ^ Tinv1[(r3>>8)& 0xff] ^
-             Tinv2[(r2>>16)& 0xff] ^ Tinv3[(r1>>24)& 0xff] ^ KW[r][0];
-        C1 = Tinv0[r1& 0xff] ^ Tinv1[(r0>>8)& 0xff] ^
-             Tinv2[(r3>>16)& 0xff] ^ Tinv3[(r2>>24)& 0xff] ^ KW[r][1];
-        C2 = Tinv0[r2& 0xff] ^ Tinv1[(r1>>8)& 0xff] ^
-             Tinv2[(r0>>16)& 0xff] ^ Tinv3[(r3>>24)& 0xff] ^ KW[r][2];
-        C3 = Tinv0[r3& 0xff] ^ Tinv1[(r2>>8)& 0xff] ^
-             Tinv2[(r1>>16)& 0xff] ^ Tinv3[(r0>>24)& 0xff] ^ KW[r][3];
+        C0 = Tinv0[r0& 0xff];
+        C0 ^= Tinv1[(r3>>8)& 0xff];
+        C0 ^= Tinv2[(r2>>16)& 0xff];
+        C0 ^= Tinv3[(r1>>24)& 0xff];
+        C0 ^= KW[r][0];
+
+        C1 = Tinv0[r1& 0xff];
+        C1 ^= Tinv1[(r0>>8)& 0xff];
+        C1 ^= Tinv2[(r3>>16)& 0xff];
+        C1 ^= Tinv3[(r2>>24)& 0xff];
+        C1 ^= KW[r][1];
+
+        C2 = Tinv0[r2& 0xff];
+        C2 ^= Tinv1[(r1>>8)& 0xff];
+        C2 ^= Tinv2[(r0>>16)& 0xff];
+        C2 ^= Tinv3[(r3>>24)& 0xff];
+        C2 ^= KW[r][2];
+
+        C3 = Tinv0[r3& 0xff];
+        C3 ^= Tinv1[(r2>>8)& 0xff];
+        C3 ^= Tinv2[(r1>>16)& 0xff];
+        C3 ^= Tinv3[(r0>>24)& 0xff];
+        C3 ^= KW[r][3];
         r -= 1;
     }
 
-    r0 = Tinv0[C0& 0xff] ^ Tinv1[(C3>>8)& 0xff] ^
-         Tinv2[(C2>>16)& 0xff] ^ Tinv3[(C1>>24)& 0xff] ^ KW[r][0];
-    r1 = Tinv0[C1& 0xff] ^ Tinv1[(C0>>8)& 0xff] ^
-         Tinv2[(C3>>16)& 0xff] ^ Tinv3[(C2>>24)& 0xff] ^ KW[r][1];
-    r2 = Tinv0[C2& 0xff] ^ Tinv1[(C1>>8)& 0xff] ^
-         Tinv2[(C0>>16)& 0xff] ^ Tinv3[(C3>>24)& 0xff] ^ KW[r][2];
-    r3 = Tinv0[C3& 0xff] ^ Tinv1[(C2>>8)& 0xff] ^
-         Tinv2[(C1>>16)& 0xff] ^ Tinv3[(C0>>24)& 0xff] ^ KW[r][3];
+    r0 = Tinv0[C0& 0xff];
+    r0 ^= Tinv1[(C3>>8)& 0xff];
+    r0 ^= Tinv2[(C2>>16)& 0xff];
+    r0 ^= Tinv3[(C1>>24)& 0xff];
+    r0 ^= KW[r][0];
 
-    C0 = (Si[r0 & 0xff] as u32) ^ ((Si[(r3>>8) & 0xff] as u32)<<8) ^
-         ((Si[(r2>>16) & 0xff] as u32)<<16) ^ ((Si[(r1>>24) & 0xff] as u32)<<24) ^ KW[0][0];
-    C1 = (Si[r1 & 0xff] as u32) ^ ((Si[(r0>>8) & 0xff] as u32)<<8) ^
-         ((Si[(r3>>16) & 0xff] as u32)<<16) ^ ((Si[(r2>>24) & 0xff] as u32)<<24) ^ KW[0][1];
-    C2 = (Si[r2 & 0xff] as u32) ^ ((Si[(r1>>8) & 0xff] as u32)<<8) ^
-         ((Si[(r0>>16) & 0xff] as u32)<<16) ^ ((Si[(r3>>24) & 0xff] as u32)<<24) ^ KW[0][2];
-    C3 = (Si[r3 & 0xff] as u32) ^ ((Si[(r2>>8) & 0xff] as u32)<<8) ^
-         ((Si[(r1>>16) & 0xff] as u32)<<16) ^ ((Si[(r0>>24) & 0xff] as u32)<<24) ^ KW[0][3];
+    r1 = Tinv0[C1& 0xff];
+    r1 ^= Tinv1[(C0>>8)& 0xff];
+    r1 ^= Tinv2[(C3>>16)& 0xff];
+    r1 ^= Tinv3[(C2>>24)& 0xff];
+    r1 ^= KW[r][1];
+
+    r2 = Tinv0[C2& 0xff];
+    r2 ^= Tinv1[(C1>>8)& 0xff];
+    r2 ^= Tinv2[(C0>>16)& 0xff];
+    r2 ^= Tinv3[(C3>>24)& 0xff];
+    r2 ^= KW[r][2];
+
+    r3 = Tinv0[C3& 0xff];
+    r3 ^= Tinv1[(C2>>8)& 0xff];
+    r3 ^= Tinv2[(C1>>16)& 0xff];
+    r3 ^= Tinv3[(C0>>24)& 0xff];
+    r3 ^= KW[r][3];
+
+    C0 = (Si[r0 & 0xff] as u32);
+    C0 ^= ((Si[(r3>>8) & 0xff] as u32)<<8);
+    C0 ^= ((Si[(r2>>16) & 0xff] as u32)<<16);
+    C0 ^= ((Si[(r1>>24) & 0xff] as u32)<<24);
+    C0 ^= KW[0][0];
+
+    C1 = (Si[r1 & 0xff] as u32);
+    C1 ^= ((Si[(r0>>8) & 0xff] as u32)<<8);
+    C1 ^= ((Si[(r3>>16) & 0xff] as u32)<<16);
+    C1 ^= ((Si[(r2>>24) & 0xff] as u32)<<24);
+    C1 ^= KW[0][1];
+
+    C2 = (Si[r2 & 0xff] as u32);
+    C2 ^= ((Si[(r1>>8) & 0xff] as u32)<<8);
+    C2 ^= ((Si[(r0>>16) & 0xff] as u32)<<16);
+    C2 ^= ((Si[(r3>>24) & 0xff] as u32)<<24);
+    C2 ^= KW[0][2];
+
+    C3 = (Si[r3 & 0xff] as u32);
+    C3 ^= ((Si[(r2>>8) & 0xff] as u32)<<8);
+    C3 ^= ((Si[(r1>>16) & 0xff] as u32)<<16);
+    C3 ^= ((Si[(r0>>24) & 0xff] as u32)<<24);
+    C3 ^= KW[0][3];
 
     pack(C0, C1, C2, C3, out);
 }
