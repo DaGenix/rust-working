@@ -13,14 +13,14 @@ use std::uint;
 
 pub trait SymmetricBlockEncryptor {
     fn init(&mut self, key: &[u8]);
-    fn encrypt(&mut self, in: &[u8], out: &mut [u8]);
+    fn encrypt_block(&mut self, in: &[u8], out: &mut [u8]);
     fn key_size(&self) -> uint;
     fn block_size(&self) -> uint;
 }
 
 pub trait SymmetricBlockDecryptor {
     fn init(&mut self, key: &[u8]);
-    fn decrypt(&mut self, in: &[u8], out: &mut [u8]);
+    fn decrypt_block(&mut self, in: &[u8], out: &mut [u8]);
     fn key_size(&self) -> uint;
     fn block_size(&self) -> uint;
 }
@@ -71,7 +71,7 @@ macro_rules! define_aes_enc(
                 self.initialized = true;
             }
 
-            fn encrypt(&mut self, in: &[u8], out: &mut [u8]) {
+            fn encrypt_block(&mut self, in: &[u8], out: &mut [u8]) {
                 assert!(self.initialized);
                 encrypt_block($rounds, in, self.working_key, out);
             }
@@ -95,7 +95,7 @@ macro_rules! define_aes_dec(
                 self.initialized = true;
             }
 
-            fn decrypt(&mut self, in: &[u8], out: &mut [u8]) {
+            fn decrypt_block(&mut self, in: &[u8], out: &mut [u8]) {
                 assert!(self.initialized);
                 decrypt_block($rounds, in, self.working_key, out);
             }
@@ -1025,9 +1025,9 @@ mod test {
         let mut tmp = [0u8, ..16];
 
         for test.data.iter().advance() |data| {
-            enc.encrypt(data.plain, tmp);
+            enc.encrypt_block(data.plain, tmp);
             assert!(vec::eq(tmp, data.cipher));
-            dec.decrypt(data.cipher, tmp);
+            dec.decrypt_block(data.cipher, tmp);
             assert!(vec::eq(tmp, data.plain));
         }
     }
