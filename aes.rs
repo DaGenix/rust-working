@@ -26,7 +26,7 @@ pub trait SymmetricBlockDecryptor {
 }
 
 
-/*!
+/*
  * A Simple AES implementation based off of the one from BouncyCastle.
  */
 
@@ -250,14 +250,21 @@ fn pack(C0: u32, C1: u32, C2: u32, C3: u32, out: &mut [u8]) {
 }
 
 fn encrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
-    let mut (C0, C1, C2, C3) = unpack(in);
+    let (C0, C1, C2, C3) = unpack(in);
+    let mut C0 = C0;
+    let mut C1 = C1;
+    let mut C2 = C2;
+    let mut C3 = C3;
 
     C0 ^= KW[0][0];
     C1 ^= KW[0][1];
     C2 ^= KW[0][2];
     C3 ^= KW[0][3];
 
-    let mut (r0, r1, r2, r3): (u32, u32, u32, u32);
+    let mut r0: u32;
+    let mut r1: u32;
+    let mut r2: u32;
+    let mut r3: u32;
 
     let mut r = 1;
     while (r < rounds - 1) {
@@ -302,14 +309,21 @@ fn encrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
 
 
 fn decrypt_block(rounds: uint, in: &[u8], KW: &[[u32, ..4]], out: &mut [u8]) {
-    let mut (C0, C1, C2, C3) = unpack(in);
+    let (C0, C1, C2, C3) = unpack(in);
+    let mut C0 = C0;
+    let mut C1 = C1;
+    let mut C2 = C2;
+    let mut C3 = C3;
 
     C0 ^= KW[rounds][0];
     C1 ^= KW[rounds][1];
     C2 ^= KW[rounds][2];
     C3 ^= KW[rounds][3];
 
-    let mut (r0, r1, r2, r3): (u32, u32, u32, u32);
+    let mut r0: u32;
+    let mut r1: u32;
+    let mut r2: u32;
+    let mut r3: u32;
 
     let mut r = rounds - 1;
     while (r > 1) {
