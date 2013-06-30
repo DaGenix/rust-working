@@ -10,21 +10,7 @@
 
 use std::uint;
 
-
-pub trait SymmetricBlockEncryptor {
-    fn init(&mut self, key: &[u8]);
-    fn encrypt_block(&mut self, in: &[u8], out: &mut [u8]);
-    fn key_size(&self) -> uint;
-    fn block_size(&self) -> uint;
-}
-
-pub trait SymmetricBlockDecryptor {
-    fn init(&mut self, key: &[u8]);
-    fn decrypt_block(&mut self, in: &[u8], out: &mut [u8]);
-    fn key_size(&self) -> uint;
-    fn block_size(&self) -> uint;
-}
-
+use symmetriccipher::*;
 
 /*
  * A Simple AES implementation based off of the one from BouncyCastle.
@@ -1001,6 +987,7 @@ mod test {
     use std::vec;
 
     use aes::*;
+    use symmetriccipher::*;
 
     // Test vectors from:
     // http://www.inconteam.com/software-development/41-encryption/55-aes-test-vectors
