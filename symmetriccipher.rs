@@ -26,6 +26,16 @@ pub trait SymmetricBlockDecryptor {
     fn block_size(&self) -> uint;
 }
 
+trait Test {
+    fn encrypt(&mut self, in: &[u8]) -> [u8, ..16];
+}
+
+
+
+trait Blocksize8 { }
+trait Blocksize16 { }
+trait Blocksize32 { }
+
 /*
 
 encrypts a single block of data at a time
@@ -40,8 +50,8 @@ encrypts a single block at a time
 NoPadding versions fail!() if the final block is partial
 - encrypt_block() may return nothing
 - encrypt_final_block() encrypts a partial block, may return 2*blocksize
-* trait SymmetricBlockEncryptionMode
-* trait SymmetricBlockDecryptionMode
+* trait SymmetricPaddedEncryptionMode
+* trait SymmetricPaddedDecryptionMode
 * struct EcbModeWithNoPadding
 * struct EcbModeWithCtsPadding
 * struct EcbModeWithPkcs7Padding
@@ -52,8 +62,8 @@ NoPadding versions fail!() if the final block is partial
 wraps a padding
 encrypts an input of arbitrary length and passes encrypted
 data to a supplied closure as appropriate
-* struct BufferedSymmetricEncryptor
-* struct BufferedSymmetricDecryptor
+* struct SymmetricEncryptionFilter
+* struct SymmetricDecryptionFilter
 
 encrypts an input of arbitrary length to an output
 of the same size
@@ -66,7 +76,7 @@ of the same size
 
 */
 
-pub trait SymmetricBlockEncryptionMode {
+pub trait SymmetricPaddedEncryptionMode {
     priv fn encrypt_block(&mut self, in: &[u8], out: &mut[u8]) -> uint;
     priv fn encrypt_final_block(&mut self, in: &[u8], out: &mut[u8]) -> uint;
 }
@@ -83,7 +93,7 @@ impl <A: SymmetricBlockEncryptor> EcbEncryptionWithNoPadding<A> {
     }
 }
 
-impl <A: SymmetricBlockEncryptor> SymmetricBlockEncryptionMode for EcbEncryptionWithNoPadding<A> {
+impl <A: SymmetricBlockEncryptor> SymmetricPaddedEncryptionMode for EcbEncryptionWithNoPadding<A> {
     fn encrypt_block(&mut self, in: &[u8], out: &mut[u8]) -> uint {
         self.algo.encrypt_block(in, out);
         return 16;
@@ -109,7 +119,7 @@ impl <A: SymmetricBlockEncryptor> EcbEncryptionWithPkcs7Padding<A> {
     }
 }
 
-impl <A: SymmetricBlockEncryptor> SymmetricBlockEncryptionMode for EcbEncryptionWithPkcs7Padding<A> {
+impl <A: SymmetricBlockEncryptor> SymmetricPaddedEncryptionMode for EcbEncryptionWithPkcs7Padding<A> {
     fn encrypt_block(&mut self, in: &[u8], out: &mut[u8]) -> uint {
         self.algo.encrypt_block(in, out);
         return 16;
@@ -175,7 +185,7 @@ impl <A: SymmetricBlockEncryptor> CbcEncryptionWithNoPadding<A> {
 //     return block_size;
 // }
 
-impl <A: SymmetricBlockEncryptor> SymmetricBlockEncryptionMode for CbcEncryptionWithNoPadding<A> {
+impl <A: SymmetricBlockEncryptor> SymmetricPaddedEncryptionMode for CbcEncryptionWithNoPadding<A> {
     fn encrypt_block(&mut self, in: &[u8], out: &mut[u8]) -> uint {
         for uint::range(0, 16) |i| {
             self.last_block[i] ^ in[i];
@@ -210,7 +220,7 @@ impl <A: SymmetricBlockEncryptor> CbcEncryptionWithPkcs7Padding<A> {
     }
 }
 
-impl <A: SymmetricBlockEncryptor> SymmetricBlockEncryptionMode for CbcEncryptionWithPkcs7Padding<A> {
+impl <A: SymmetricBlockEncryptor> SymmetricPaddedEncryptionMode for CbcEncryptionWithPkcs7Padding<A> {
     fn encrypt_block(&mut self, in: &[u8], out: &mut[u8]) -> uint {
         for uint::range(0, 16) |i| {
             self.last_block[i] ^ in[i];
@@ -251,21 +261,21 @@ impl <A: SymmetricBlockEncryptor> SymmetricBlockEncryptionMode for CbcEncryption
 //
 
 
-pub trait BufferedSymmetricEncryptor {
+pub trait SymmetricEncryptionFilter {
     fn encrypt(&mut self, in: &[u8], handler: &fn(&[u8]));
     fn final(&mut self, handler: &fn(&[u8]));
 }
 
 
-struct PaddedEncryptionBuffer <P> {
+struct PaddedSymmetricEncryptionFilter <P> {
     padding: P,
     buff: [u8, ..16],
     buff_idx: uint
 }
 
-impl <P: SymmetricBlockEncryptionMode> PaddedEncryptionBuffer<P> {
-    fn new(padding: P) -> PaddedEncryptionBuffer<P> {
-        PaddedEncryptionBuffer {
+impl <P: SymmetricPaddedEncryptionMode> PaddedSymmetricEncryptionFilter<P> {
+    fn new(padding: P) -> PaddedSymmetricEncryptionFilter<P> {
+        PaddedSymmetricEncryptionFilter {
             padding: padding,
             buff: [0u8, ..16],
             buff_idx: 0
@@ -273,7 +283,7 @@ impl <P: SymmetricBlockEncryptionMode> PaddedEncryptionBuffer<P> {
     }
 }
 
-impl <P: SymmetricBlockEncryptionMode> BufferedSymmetricEncryptor for PaddedEncryptionBuffer<P> {
+impl <P: SymmetricPaddedEncryptionMode> SymmetricEncryptionFilter for PaddedSymmetricEncryptionFilter<P> {
     fn encrypt(&mut self, in: &[u8], handler: &fn(&[u8])) {
         let mut out = [0u8, ..16];
 
