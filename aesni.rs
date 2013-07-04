@@ -31,6 +31,10 @@ struct AesEncryptor {
     kw: [u8, ..16 * (10 + 1)]
 }
 
+struct AesDecryptor {
+    kw: [u8, ..16 * (10 + 1)]
+}
+
 impl AesEncryptor {
     fn new() -> AesEncryptor {
         return AesEncryptor {
@@ -39,10 +43,18 @@ impl AesEncryptor {
     }
 }
 
+impl AesDecryptor {
+    fn new() -> AesDecryptor {
+        return AesDecryptor {
+            kw: ([0u8, ..16 * (10 + 1)])
+        };
+    }
+}
+
 
 impl SymmetricBlockEncryptor16 for AesEncryptor {
     fn init(&mut self, key: &[u8]) {
-        setup_working_key(key, 10, Encryption, self.kw);
+        self.kw = setup_working_key_aesni_128(key, 10, Encryption);
     }
 
     fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
@@ -50,18 +62,16 @@ impl SymmetricBlockEncryptor16 for AesEncryptor {
     }
 }
 
-
-/*
-impl SymmetricBlockDecryptor16 for AesEncryptor {
-    fn init(&mut self, key: &[u8, ..16]) {
-
+impl SymmetricBlockDecryptor16 for AesDecryptor {
+    fn init(&mut self, key: &[u8]) {
+        self.kw = setup_working_key_aesni_128(key, 10, Decryption);
     }
 
     fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
-        [0u8, ..16]
+        return decrypt_block_aseni(10, in, self.kw);
     }
 }
-*/
+
 
 fn cpuid(func: u32) -> (u32, u32, u32, u32) {
     let mut a = 0u32;
@@ -99,20 +109,35 @@ enum KeyType {
     Decryption
 }
 
-fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, kw: &mut [u8]) {
+unsafe fn aesimc(kw: *u8) {
+    asm!(
+    "
+    movdqu ($0), %xmm1
+    aesimc %xmm1, %xmm1
+    movdqu %xmm1, ($0)
+    "
+    : // outputs
+    : "r" (kw) // inputs
+    : "xmm1", "memory" // clobbers
+    : "volatile"
+    )
+}
+
+fn setup_working_key_aesni_128(key: &[u8], rounds: uint, key_type: KeyType) -> [u8, ..16 * (10 + 1)] {
     use std::cast::transmute;
     use std::ptr::to_unsafe_ptr;
 
+    let kw = [0u8, ..16 * (10 + 1)];
+
     unsafe {
+        let mut kwp: *u8 = kw.unsafe_ref(0);
         let keyp: *u8 = key.unsafe_ref(0);
-        let kwp: *u8 = kw.unsafe_ref(0);
 
         asm!(
         "
-            movdqu ($0), %xmm1
-            movdqu %xmm1, ($1)
-            mov $1, %rcx
-            add $$0x10, %rcx
+            movdqu ($1), %xmm1
+            movdqu %xmm1, ($0)
+            add $$0x10, $0
 
             aeskeygenassist $$0x01, %xmm1, %xmm2
             call key_expansion_128
@@ -135,7 +160,7 @@ fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, kw: &mut [u8])
             aeskeygenassist $$0x36, %xmm1, %xmm2
             call key_expansion_128
 
-            jmp END
+            jmp end
 
             key_expansion_128:
             pshufd $$0xff, %xmm2, %xmm2
@@ -146,19 +171,30 @@ fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, kw: &mut [u8])
             vpslldq $$0x04, %xmm1, %xmm3
             pxor %xmm3, %xmm1
             pxor %xmm2, %xmm1
-            movdqu %xmm1, (%rcx)
-            add $$0x10, %rcx
+            movdqu %xmm1, ($0)
+            add $$0x10, $0
             ret
 
-            END:
+            end:
         "
-        :
-        : "r" (keyp), "r" (kwp)
-        : "rcx", "xmm1", "xmm2", "xmm3" /* is "cc" needed? other registers? */
+        : "=r" (kwp)
+        : "r" (keyp), "0" (kwp)
+        : "xmm1", "xmm2", "xmm3", "memory"
         : "volatile"
         )
+
+        match key_type {
+            Encryption => { /* nothing more to do */ }
+            Decryption => {
+                // range of rounds keys from #1 to #9; skip the first and last key
+                for uint::range(1, 10) |i| {
+                    aesimc(kw.unsafe_ref(16 * i));
+                }
+            }
+        }
     }
 
+    return kw;
 }
 
 fn encrypt_block_aseni(rounds: uint, in: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
@@ -167,71 +203,92 @@ fn encrypt_block_aseni(rounds: uint, in: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
     let out = [0u8, ..16];
 
     unsafe {
-        let kwp: *u8 = kw.unsafe_ref(0);
+        let mut rounds = rounds;
+        let mut kwp: *u8 = kw.unsafe_ref(0);
+        let outp: *u8 = out.unsafe_ref(0);
         let inp: *u8 = in.unsafe_ref(0);
-        let mut outp: *u8 = out.unsafe_ref(0);
 
         asm!(
         "
-        movdqu ($1), %xmm15
+        /* Copy the data to encrypt to xmm15 */
+        movdqu ($2), %xmm15
 
-        mov $0, %rcx
-
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
+        /* Perform round 0 - the whitening step */
+        movdqu ($1), %xmm0
+        add $$0x10, $1
         pxor %xmm0, %xmm15
 
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
+        /* Perform all remaining rounds (except the final one) */
+        enc_round:
+        movdqu ($1), %xmm0
+        add $$0x10, $1
         aesenc %xmm0, %xmm15
+        sub $$0x01, $0
+        cmp $$0x01, $0
+        jne enc_round
 
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
-        aesenc %xmm0, %xmm15
-
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
-        aesenc %xmm0, %xmm15
-
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
-        aesenc %xmm0, %xmm15
-
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
-        aesenc %xmm0, %xmm15
-
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
-        aesenc %xmm0, %xmm15
-
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
-        aesenc %xmm0, %xmm15
-
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
-        aesenc %xmm0, %xmm15
-
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
-        aesenc %xmm0, %xmm15
-
-        movdqu (%rcx), %xmm0
-        add $$0x10, %rcx
+        /* Perform the last round */
+        movdqu ($1), %xmm0
         aesenclast %xmm0, %xmm15
 
-        movdqu %xmm15, ($2)
+        /* Finally, move the result from xmm15 to outp */
+        movdqu %xmm15, ($3)
         "
-        : // outputs
-        : "r" (kwp), "r" (inp), "r" (outp) // inputs
-        : "xmm0", "xmm15", "rcx" // clobbers
+        : "=r" (rounds), "=r" (kwp) // outputs
+        : "r" (inp), "r" (outp), "0" (rounds), "1" (kwp) // inputs
+        : "xmm0", "xmm15", "memory", "cc" // clobbers
         : "volatile" // options
         );
     }
 
     return out;
 }
+
+fn decrypt_block_aseni(rounds: uint, in: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
+    let out = [0u8, ..16];
+
+    unsafe {
+        let mut rounds = rounds;
+        let mut kwp: *u8 = kw.unsafe_ref(kw.len() - 16);
+        let outp: *u8 = out.unsafe_ref(0);
+        let inp: *u8 = in.unsafe_ref(0);
+
+        asm!(
+        "
+        /* Copy the data to decrypt to xmm15 */
+        movdqu ($2), %xmm15
+
+        /* Perform round 0 - the whitening step */
+        movdqu ($1), %xmm0
+        sub $$0x10, $1
+        pxor %xmm0, %xmm15
+
+        /* Perform all remaining rounds (except the final one) */
+        dec_round:
+        movdqu ($1), %xmm0
+        sub $$0x10, $1
+        aesdec %xmm0, %xmm15
+        sub $$0x01, $0
+        cmp $$0x01, $0
+        jne dec_round
+
+        /* Perform the last round */
+        movdqu ($1), %xmm0
+        aesdeclast %xmm0, %xmm15
+
+        /* Finally, move the result from xmm15 to outp */
+        movdqu %xmm15, ($3)
+        "
+        : "=r" (rounds), "=r" (kwp) // outputs
+        : "r" (inp), "r" (outp), "0" (rounds), "1" (kwp) // inputs
+        : "xmm0", "xmm15", "memory", "cc" // clobbers
+        : "volatile" // options
+        );
+    }
+
+    return out;
+}
+
 
 #[cfg(test)]
 mod test {
@@ -270,22 +327,19 @@ mod test {
             fn $func(test: &Test) {
                 let mut enc = $enc::new();
                 enc.init(test.key);
-  //              let mut dec = $dec::new(test.key);
+                let mut dec = $dec::new();
+                dec.init(test.key);
 
                 for test.data.iter().advance() |data| {
                     let tmp = enc.encrypt_block(&data.plain);
-
-                    println(to_hex(data.cipher));
-                    println(to_hex(tmp));
-
                     assert!(vec::eq(tmp, data.cipher));
-  //                  let tmp = dec.decrypt_block(&data.cipher);
-  //                  assert!(vec::eq(tmp, data.plain));
+                    let tmp = dec.decrypt_block(&data.cipher);
+                    assert!(vec::eq(tmp, data.plain));
                 }
             }
         )
     )
-    define_run_test!(run_test128, AesEncryptor, Aes128Decrypt)
+    define_run_test!(run_test128, AesEncryptor, AesDecryptor)
 //    define_run_test!(run_test192, Aes192Encrypt, Aes192Decrypt)
 //    define_run_test!(run_test256, Aes256Encrypt, Aes256Decrypt)
 
@@ -299,8 +353,6 @@ mod test {
                     TestData {
                         plain:  [0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
                                  0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a],
-//                         plain:  [0x2a, 0x17, 0x93, 0x73, 0x11, 0x7e, 0x3d, 0xe9,
-//                                  0x96, 0x9f, 0x40, 0x2e, 0xe2, 0xbe, 0xc1, 0x6b],
                         cipher: [0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60,
                                  0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97]
                     },
