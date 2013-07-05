@@ -1,5 +1,6 @@
 
 #[crate_type = "lib"];
 
+pub mod aes;
 pub mod aesni;
 pub mod symmetriccipher;

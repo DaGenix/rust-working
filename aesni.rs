@@ -10,95 +10,154 @@
 
 use std::uint;
 
+use symmetriccipher::*;
+
 /*
  * A Simple AES implementation using Intel AES-NI instructions
  */
 
-pub trait SymmetricBlockEncryptor16 {
-    fn init(&mut self, key: &[u8]);
-    fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16];
-}
-
-pub trait SymmetricBlockDecryptor16 {
-    fn init(&mut self, key: &[u8]);
-    fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16];
-}
-
-struct AesEncryptor {
+struct AesNi128Encryptor {
     kw: [u8, ..16 * (10 + 1)]
 }
 
-struct AesDecryptor {
+struct AesNi128Decryptor {
     kw: [u8, ..16 * (10 + 1)]
 }
 
-impl AesEncryptor {
-    pub fn new() -> AesEncryptor {
-        return AesEncryptor {
+impl AesNi128Encryptor {
+    pub fn new() -> AesNi128Encryptor {
+        return AesNi128Encryptor {
             kw: ([0u8, ..16 * (10 + 1)])
         };
     }
 }
 
-impl AesDecryptor {
-    pub fn new() -> AesDecryptor {
-        return AesDecryptor {
+impl AesNi128Decryptor {
+    pub fn new() -> AesNi128Decryptor {
+        return AesNi128Decryptor {
             kw: ([0u8, ..16 * (10 + 1)])
         };
     }
 }
 
-
-impl SymmetricBlockEncryptor16 for AesEncryptor {
-    fn init(&mut self, key: &[u8]) {
-        self.kw = setup_working_key_aesni_128(key, Encryption);
-    }
-
+impl SymmetricBlockEncryptor128 for AesNi128Encryptor {
     fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
         return encrypt_block_aseni(10, in, self.kw);
     }
 }
 
-impl SymmetricBlockDecryptor16 for AesDecryptor {
-    fn init(&mut self, key: &[u8]) {
-        self.kw = setup_working_key_aesni_128(key, Decryption);
+impl SymmetricKeyedCipher128 for AesNi128Encryptor {
+    fn init(&mut self, key: &[u8, ..16]) {
+        self.kw = setup_working_key_aesni_128(key, Encryption);
     }
+}
 
+impl SymmetricBlockDecryptor128 for AesNi128Decryptor {
     fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
         return decrypt_block_aseni(10, in, self.kw);
     }
 }
 
-
-fn cpuid(func: u32) -> (u32, u32, u32, u32) {
-    let mut a = 0u32;
-    let mut b = 0u32;
-    let mut c = 0u32;
-    let mut d = 0u32;
-
-    unsafe {
-        asm!(
-        "
-        movl $4, %eax;
-        cpuid;
-        movl %eax, $0;
-        movl %ebx, $1;
-        movl %ecx, $2;
-        movl %edx, $3;
-        "
-        : "=r" (a), "=r" (b), "=r" (c), "=r" (d)
-        : "r" (func)
-        : "eax", "ebx", "ecx", "edx"
-        : "volatile"
-        )
+impl SymmetricKeyedCipher128 for AesNi128Decryptor {
+    fn init(&mut self, key: &[u8, ..16]) {
+        self.kw = setup_working_key_aesni_128(key, Decryption);
     }
-
-    return (a, b, c, d);
 }
 
-fn supports_aesni() -> bool {
-    let (_, _, c, _) = cpuid(1);
-    return (c & 0x02000000) != 0;
+struct AesNi192Encryptor {
+    kw: [u8, ..16 * (12 + 1)]
+}
+
+struct AesNi192Decryptor {
+    kw: [u8, ..16 * (12 + 1)]
+}
+
+impl AesNi192Encryptor {
+    pub fn new() -> AesNi192Encryptor {
+        return AesNi192Encryptor {
+            kw: ([0u8, ..16 * (12 + 1)])
+        };
+    }
+}
+
+impl AesNi192Decryptor {
+    pub fn new() -> AesNi192Decryptor {
+        return AesNi192Decryptor {
+            kw: ([0u8, ..16 * (12 + 1)])
+        };
+    }
+}
+
+impl SymmetricBlockEncryptor128 for AesNi192Encryptor {
+    fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+        return encrypt_block_aseni(12, in, self.kw);
+    }
+}
+
+impl SymmetricKeyedCipher192 for AesNi192Encryptor {
+    fn init(&mut self, key: &[u8, ..24]) {
+        self.kw = setup_working_key_aesni_192(key, Encryption);
+    }
+}
+
+impl SymmetricBlockDecryptor128 for AesNi192Decryptor {
+    fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+        return decrypt_block_aseni(12, in, self.kw);
+    }
+}
+
+impl SymmetricKeyedCipher192 for AesNi192Decryptor {
+    fn init(&mut self, key: &[u8, ..24]) {
+        self.kw = setup_working_key_aesni_192(key, Decryption);
+    }
+}
+
+struct AesNi256Encryptor {
+    kw: [u8, ..16 * (14 + 1)]
+}
+
+struct AesNi256Decryptor {
+    kw: [u8, ..16 * (14 + 1)]
+}
+
+impl AesNi256Encryptor {
+    pub fn new() -> AesNi256Encryptor {
+        return AesNi256Encryptor {
+            kw: ([0u8, ..16 * (14 + 1)])
+        };
+    }
+}
+
+impl AesNi256Decryptor {
+    pub fn new() -> AesNi256Decryptor {
+        return AesNi256Decryptor {
+            kw: ([0u8, ..16 * (14 + 1)])
+        };
+    }
+}
+
+impl SymmetricBlockEncryptor128 for AesNi256Encryptor {
+    fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+        return encrypt_block_aseni(14, in, self.kw);
+    }
+}
+
+impl SymmetricKeyedCipher256 for AesNi256Encryptor {
+    fn init(&mut self, key: &[u8, ..32]) {
+        self.kw = setup_working_key_aesni_256(key, Encryption);
+    }
+}
+
+impl SymmetricBlockDecryptor128 for AesNi256Decryptor {
+    fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+        return decrypt_block_aseni(14, in, self.kw);
+    }
+}
+
+impl SymmetricKeyedCipher256 for AesNi256Decryptor {
+    fn init(&mut self, key: &[u8, ..32]) {
+        self.kw = setup_working_key_aesni_256(key, Decryption);
+    }
 }
 
 enum KeyType {
@@ -121,7 +180,7 @@ unsafe fn aesimc(kw: *u8) {
     )
 }
 
-fn setup_working_key_aesni_128(key: &[u8], key_type: KeyType) -> [u8, ..16 * (10 + 1)] {
+fn setup_working_key_aesni_128(key: &[u8, ..16], key_type: KeyType) -> [u8, ..16 * (10 + 1)] {
     let kw = [0u8, ..16 * (10 + 1)];
 
     unsafe {
@@ -192,8 +251,13 @@ fn setup_working_key_aesni_128(key: &[u8], key_type: KeyType) -> [u8, ..16 * (10
     return kw;
 }
 
+#[cfg(not(off))]
+fn setup_working_key_aesni_192(key: &[u8, ..24], key_type: KeyType) -> [u8, ..16 * (12 + 1)] {
+    [0u8, ..16 * (12 + 1)]
+}
+
 #[cfg(off)]
-fn setup_working_key_aesni_192(key: &[u8], key_type: KeyType) -> [u8, ..16 * (12 + 1)] {
+fn setup_working_key_aesni_192(key: &[u8, ..24], key_type: KeyType) -> [u8, ..16 * (12 + 1)] {
     let kw = [0u8, ..16 * (12 + 1)];
 
     unsafe {
@@ -288,6 +352,9 @@ fn setup_working_key_aesni_192(key: &[u8], key_type: KeyType) -> [u8, ..16 * (12
     return kw;
 }
 
+fn setup_working_key_aesni_256(key: &[u8, ..32], key_type: KeyType) -> [u8, ..16 * (14 + 1)] {
+    [0u8, ..16 * (14 + 1)]
+}
 
 fn encrypt_block_aseni(rounds: uint, in: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
     use std::cast::transmute;
@@ -418,9 +485,9 @@ mod test {
     macro_rules! define_run_test(($func:ident, $enc:ident, $dec:ident) => (
             fn $func(test: &Test) {
                 let mut enc = $enc::new();
-                enc.init(test.key);
+                enc.init(vec_to_array128(test.key));
                 let mut dec = $dec::new();
-                dec.init(test.key);
+                dec.init(vec_to_array128(test.key));
 
                 for test.data.iter().advance() |data| {
                     let tmp = enc.encrypt_block(&data.plain);
@@ -431,7 +498,7 @@ mod test {
             }
         )
     )
-    define_run_test!(run_test128, AesEncryptor, AesDecryptor)
+    define_run_test!(run_test128, AesNi128Encryptor, AesNi128Decryptor)
 //    define_run_test!(run_test192, Aes192Encrypt, Aes192Decrypt)
 //    define_run_test!(run_test256, Aes256Encrypt, Aes256Decrypt)
 

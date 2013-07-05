@@ -12,8 +12,46 @@ use std::uint;
 use std::cast::transmute;
 use std::vec::bytes;
 
+
+pub trait SymmetricKeyedCipher128 {
+    fn init(&mut self, key: &[u8, ..16]);
+}
+
+pub trait SymmetricKeyedCipher192 {
+    fn init(&mut self, key: &[u8, ..24]);
+}
+
+pub trait SymmetricKeyedCipher256 {
+    fn init(&mut self, key: &[u8, ..32]);
+}
+
+pub trait SymmetricBlockEncryptor128 {
+    fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16];
+}
+
+pub trait SymmetricBlockDecryptor128 {
+    fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16];
+}
+
+
+pub fn vec_to_array128(in: &[u8]) -> &[u8, ..16] {
+    if(in.len() != 16) {
+        fail!();
+    }
+    unsafe {
+        let tmp: &[u8, ..16] = transmute(in.unsafe_ref(0));
+        return tmp;
+    }
+}
+
+
+
+
+
+
 // Traits for algorithms that can function on a single
 // block at a time.
+/*
 pub trait SymmetricBlockEncryptor16 {
     fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16];
 }
@@ -30,6 +68,7 @@ pub fn cast_to_16(in: &[u8]) -> &[u8, ..16] {
         return tmp;
     }
 }
+*/
 
 /*
 
@@ -72,6 +111,7 @@ of the same size
 */
 
 
+/*
 pub trait SymmetricPaddedEncryptionMode16 {
     priv fn encrypt_block(&mut self, in: &[u8, ..16], handler: &fn(&[u8]));
     priv fn encrypt_final_block(&mut self, in: &[u8], handler: &fn(&[u8]));
@@ -183,7 +223,7 @@ impl <A: SymmetricBlockEncryptor16> SymmetricPaddedEncryptionMode16 for CbcEncry
         self.encrypt_block(cast_to_16(in), handler);
     }
 }
-
+*/
 
 /*
 
@@ -244,7 +284,7 @@ impl <A: SymmetricBlockEncryptor16> SymmetricPaddedEncryptionMode for CbcEncrypt
 // }
 //
 
-
+/*
 pub trait SymmetricEncryptionFilter {
     fn encrypt(&mut self, in: &[u8], handler: &fn(&[u8]));
     fn final(&mut self, handler: &fn(&[u8]));
@@ -299,7 +339,7 @@ impl <P: SymmetricPaddedEncryptionMode16> SymmetricEncryptionFilter for PaddedSy
     }
 }
 
-
+*/
 
 
 

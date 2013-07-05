@@ -40,13 +40,13 @@ fn main() {
     let mut out1 = [0u8, ..16];
     let mut out2 = [0u8, ..16];
 
-    let count = 30000000;
+    let count = 60000000;
 
     let start_ns = get_ns();
 
     for uint::range(0, count) |_| {
         out1 = enc.encrypt_block(&plain);
-        out2 = dec.decrypt_block(&out1);
+//        out2 = dec.decrypt_block(&out1);
     }
 
     let end_ns = get_ns();
