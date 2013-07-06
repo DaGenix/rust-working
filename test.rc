@@ -2,5 +2,12 @@
 #[crate_type = "lib"];
 
 pub mod aes;
+pub mod aesdangerous;
+
+#[cfg(target_arch = "x86")]
+#[cfg(target_arch = "x86_64")]
 pub mod aesni;
+
 pub mod symmetriccipher;
+
+pub mod util;

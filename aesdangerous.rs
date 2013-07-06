@@ -19,10 +19,10 @@ use symmetriccipher::*;
 macro_rules! define_aes_struct(
     (
         $name:ident,
-        $wk_size:expr
+        $rounds:expr
     ) => (
         struct $name {
-            working_key: [[u32, ..4], ..$wk_size],
+            working_key: [[u32, ..4], ..$rounds + 1],
             initialized: bool
         }
     )
@@ -33,19 +33,14 @@ macro_rules! define_aes_impl(
         $name:ident,
         $mode:ident,
         $rounds:expr,
-        $key_size:expr,
-        $wk_size:expr
+        $key_size:expr
     ) => (
         impl $name {
-            pub fn new(key: &[u8]) -> $name {
-                let mut c = $name {
-                    working_key: [[0u32, ..4], ..$wk_size],
+            pub fn new() -> $name {
+                return $name {
+                    working_key: [[0u32, ..4], ..$rounds + 1],
                     initialized: false
                 };
-                assert!(key.len() == $key_size);
-                setup_working_key(key, $rounds, $mode, c.working_key);
-                c.initialized = true;
-                return c;
             }
         }
     )
@@ -54,10 +49,9 @@ macro_rules! define_aes_impl(
 macro_rules! define_aes_enc(
     (
         $name:ident,
-        $rounds:expr,
-        $key_size:expr
+        $rounds:expr
     ) => (
-        impl SymmetricBlockEncryptor16 for $name {
+        impl SymmetricBlockEncryptor128 for $name {
             fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
                 assert!(self.initialized);
                 return encrypt_block($rounds, in, self.working_key);
@@ -69,10 +63,9 @@ macro_rules! define_aes_enc(
 macro_rules! define_aes_dec(
     (
         $name:ident,
-        $rounds:expr,
-        $key_size:expr
+        $rounds:expr
     ) => (
-        impl SymmetricBlockDecryptor16 for $name {
+        impl SymmetricBlockDecryptor128 for $name {
             fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
                 assert!(self.initialized);
                 return decrypt_block($rounds, in, self.working_key);
@@ -81,26 +74,49 @@ macro_rules! define_aes_dec(
     )
 )
 
-define_aes_struct!(Aes128Encrypt, 11)
-define_aes_struct!(Aes128Decrypt, 11)
-define_aes_impl!(Aes128Encrypt, Encryption, 10, 16, 11)
-define_aes_impl!(Aes128Decrypt, Decryption, 10, 16, 11)
-define_aes_enc!(Aes128Encrypt, 10, 16)
-define_aes_dec!(Aes128Decrypt, 10, 16)
+macro_rules! define_aes_init(
+    (
+        $name:ident,
+        $tra:ident,
+        $keytype:ty,
+        $mode:expr,
+        $rounds:expr
+    ) => (
+        impl $tra for $name {
+            fn init(&mut self, key: $keytype) {
+                setup_working_key(*key, $rounds, $mode, self.working_key);
+                self.initialized = true;
+            }
+        }
+    )
+)
 
-define_aes_struct!(Aes192Encrypt, 13)
-define_aes_struct!(Aes192Decrypt, 13)
-define_aes_impl!(Aes192Encrypt, Encryption, 12, 24, 13)
-define_aes_impl!(Aes192Decrypt, Decryption, 12, 24, 13)
-define_aes_enc!(Aes192Encrypt, 12, 24)
-define_aes_dec!(Aes192Decrypt, 12, 24)
+define_aes_struct!(Aes128Encrypt, 10)
+define_aes_struct!(Aes128Decrypt, 10)
+define_aes_impl!(Aes128Encrypt, Encryption, 10, 16)
+define_aes_impl!(Aes128Decrypt, Decryption, 10, 16)
+define_aes_enc!(Aes128Encrypt, 10)
+define_aes_dec!(Aes128Decrypt, 10)
+define_aes_init!(Aes128Encrypt, SymmetricKeyedCipher128, &[u8, ..16], Encryption, 10)
+define_aes_init!(Aes128Decrypt, SymmetricKeyedCipher128, &[u8, ..16], Decryption, 10)
 
-define_aes_struct!(Aes256Encrypt, 15)
-define_aes_struct!(Aes256Decrypt, 15)
-define_aes_impl!(Aes256Encrypt, Encryption, 14, 32, 15)
-define_aes_impl!(Aes256Decrypt, Decryption, 14, 32, 15)
-define_aes_enc!(Aes256Encrypt, 14, 32)
-define_aes_dec!(Aes256Decrypt, 14, 32)
+define_aes_struct!(Aes192Encrypt, 12)
+define_aes_struct!(Aes192Decrypt, 12)
+define_aes_impl!(Aes192Encrypt, Encryption, 12, 24)
+define_aes_impl!(Aes192Decrypt, Decryption, 12, 24)
+define_aes_enc!(Aes192Encrypt, 12)
+define_aes_dec!(Aes192Decrypt, 12)
+define_aes_init!(Aes192Encrypt, SymmetricKeyedCipher192, &[u8, ..24], Encryption, 12)
+define_aes_init!(Aes192Decrypt, SymmetricKeyedCipher192, &[u8, ..24], Decryption, 12)
+
+define_aes_struct!(Aes256Encrypt, 14)
+define_aes_struct!(Aes256Decrypt, 14)
+define_aes_impl!(Aes256Encrypt, Encryption, 14, 32)
+define_aes_impl!(Aes256Decrypt, Decryption, 14, 32)
+define_aes_enc!(Aes256Encrypt, 14)
+define_aes_dec!(Aes256Decrypt, 14)
+define_aes_init!(Aes256Encrypt, SymmetricKeyedCipher256, &[u8, ..32], Encryption, 14)
+define_aes_init!(Aes256Decrypt, SymmetricKeyedCipher256, &[u8, ..32], Decryption, 14)
 
 fn shift(r: u32, shift: u32) -> u32 {
     return (r >> shift) | (r << -shift);
@@ -973,165 +989,3 @@ static Tinv3: [u32, ..256] = [
     0xd89ce4b4, 0x6490c156, 0x7b6184cb, 0xd570b632, 0x48745c6c,
     0xd04257b8
 ];
-
-
-#[cfg(test)]
-mod test {
-    use std::vec;
-
-    use aes::*;
-    use symmetriccipher::*;
-
-    // Test vectors from:
-    // http://www.inconteam.com/software-development/41-encryption/55-aes-test-vectors
-
-    struct Test {
-        key: ~[u8],
-        data: ~[TestData]
-    }
-
-    struct TestData {
-        plain: [u8, ..16],
-        cipher: [u8, ..16]
-    }
-
-    macro_rules! define_run_test(($func:ident, $enc:ident, $dec:ident) => (
-            fn $func(test: &Test) {
-                let mut enc = $enc::new(test.key);
-                let mut dec = $dec::new(test.key);
-
-                for test.data.iter().advance() |data| {
-                    let tmp = enc.encrypt_block(&data.plain);
-                    assert!(vec::eq(tmp, data.cipher));
-                    let tmp = dec.decrypt_block(&data.cipher);
-                    assert!(vec::eq(tmp, data.plain));
-                }
-            }
-        )
-    )
-    define_run_test!(run_test128, Aes128Encrypt, Aes128Decrypt)
-    define_run_test!(run_test192, Aes192Encrypt, Aes192Decrypt)
-    define_run_test!(run_test256, Aes256Encrypt, Aes256Decrypt)
-
-    #[test]
-    fn testAes128() {
-        let tests = ~[
-            Test {
-                key: ~[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
-                       0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c],
-                data: ~[
-                    TestData {
-                        plain:  [0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
-                                 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a],
-                        cipher: [0x3a, 0xd7, 0x7b, 0xb4, 0x0d, 0x7a, 0x36, 0x60,
-                                 0xa8, 0x9e, 0xca, 0xf3, 0x24, 0x66, 0xef, 0x97]
-                    },
-                    TestData {
-                        plain:  [0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
-                                 0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51],
-                        cipher: [0xf5, 0xd3, 0xd5, 0x85, 0x03, 0xb9, 0x69, 0x9d,
-                                 0xe7, 0x85, 0x89, 0x5a, 0x96, 0xfd, 0xba, 0xaf]
-                    },
-                    TestData {
-                        plain:  [0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11,
-                                 0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef],
-                        cipher: [0x43, 0xb1, 0xcd, 0x7f, 0x59, 0x8e, 0xce, 0x23,
-                                 0x88, 0x1b, 0x00, 0xe3, 0xed, 0x03, 0x06, 0x88]
-                    },
-                    TestData {
-                        plain:  [0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17,
-                                 0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10],
-                        cipher: [0x7b, 0x0c, 0x78, 0x5e, 0x27, 0xe8, 0xad, 0x3f,
-                                 0x82, 0x23, 0x20, 0x71, 0x04, 0x72, 0x5d, 0xd4]
-                    }
-                ]
-            }
-        ];
-
-        for tests.iter().advance() |t| {
-            run_test128(t);
-        }
-    }
-
-    #[test]
-    fn testAes192() {
-        let tests = ~[
-            Test {
-                key: ~[0x8e, 0x73, 0xb0, 0xf7, 0xda, 0x0e, 0x64, 0x52, 0xc8, 0x10, 0xf3, 0x2b,
-                       0x80, 0x90, 0x79, 0xe5, 0x62, 0xf8, 0xea, 0xd2, 0x52, 0x2c, 0x6b, 0x7b],
-                data: ~[
-                    TestData {
-                        plain:  [0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
-                                 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a],
-                        cipher: [0xbd, 0x33, 0x4f, 0x1d, 0x6e, 0x45, 0xf2, 0x5f,
-                                 0xf7, 0x12, 0xa2, 0x14, 0x57, 0x1f, 0xa5, 0xcc]
-                    },
-                    TestData {
-                        plain:  [0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
-                                 0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51],
-                        cipher: [0x97, 0x41, 0x04, 0x84, 0x6d, 0x0a, 0xd3, 0xad,
-                                 0x77, 0x34, 0xec, 0xb3, 0xec, 0xee, 0x4e, 0xef]
-                    },
-                    TestData {
-                        plain:  [0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11,
-                                 0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef],
-                        cipher: [0xef, 0x7a, 0xfd, 0x22, 0x70, 0xe2, 0xe6, 0x0a,
-                                 0xdc, 0xe0, 0xba, 0x2f, 0xac, 0xe6, 0x44, 0x4e]
-                    },
-                    TestData {
-                        plain:  [0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17,
-                                 0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10],
-                        cipher: [0x9a, 0x4b, 0x41, 0xba, 0x73, 0x8d, 0x6c, 0x72,
-                                 0xfb, 0x16, 0x69, 0x16, 0x03, 0xc1, 0x8e, 0x0e]
-                    }
-                ]
-            }
-        ];
-
-        for tests.iter().advance() |t| {
-            run_test192(t);
-        }
-    }
-
-    #[test]
-    fn testAes256() {
-        let tests = ~[
-            Test {
-                key: ~[0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe,
-                       0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
-                       0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
-                       0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4],
-                data: ~[
-                    TestData {
-                        plain:  [0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96,
-                                 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a],
-                        cipher: [0xf3, 0xee, 0xd1, 0xbd, 0xb5, 0xd2, 0xa0, 0x3c,
-                                 0x06, 0x4b, 0x5a, 0x7e, 0x3d, 0xb1, 0x81, 0xf8]
-                    },
-                    TestData {
-                        plain:  [0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c,
-                                 0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51],
-                        cipher: [0x59, 0x1c, 0xcb, 0x10, 0xd4, 0x10, 0xed, 0x26,
-                                 0xdc, 0x5b, 0xa7, 0x4a, 0x31, 0x36, 0x28, 0x70]
-                    },
-                    TestData {
-                        plain:  [0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11,
-                                 0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef],
-                        cipher: [0xb6, 0xed, 0x21, 0xb9, 0x9c, 0xa6, 0xf4, 0xf9,
-                                 0xf1, 0x53, 0xe7, 0xb1, 0xbe, 0xaf, 0xed, 0x1d]
-                    },
-                    TestData {
-                        plain:  [0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17,
-                                 0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10],
-                        cipher: [0x23, 0x30, 0x4b, 0x7a, 0x39, 0xf9, 0xf3, 0xff,
-                                 0x06, 0x7d, 0x8d, 0x8f, 0x9e, 0x24, 0xec, 0xc7]
-                    }
-                ]
-            }
-        ];
-
-        for tests.iter().advance() |t| {
-            run_test256(t);
-        }
-    }
-}

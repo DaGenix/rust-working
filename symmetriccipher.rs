@@ -34,15 +34,6 @@ pub trait SymmetricBlockDecryptor128 {
 }
 
 
-pub fn vec_to_array128(in: &[u8]) -> &[u8, ..16] {
-    if(in.len() != 16) {
-        fail!();
-    }
-    unsafe {
-        let tmp: &[u8, ..16] = transmute(in.unsafe_ref(0));
-        return tmp;
-    }
-}
 
 
 
