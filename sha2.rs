@@ -965,6 +965,19 @@ mod tests {
         }
     }
     
+    fn big_str() -> ~str {
+        use std::uint;
+        
+        let size = 10000000;
+        let mut s = ~"";
+        s.reserve(size);
+        for uint::range(0, size) |_| {
+            s.push_char('A');
+        }
+
+        s
+    }
+
     #[test]
     fn test_sha512() {
         // Examples from wikipedia
@@ -984,6 +997,10 @@ mod tests {
                 output_str: ~"91ea1245f20d46ae9a037a989f54f1f790f0a47607eeb8a14d12890cea77a1bb" +
                              "c6c7ed9cf205e67b7f2b8fd4c7dfd3a7a8617e45f3c463d481c7e586c39ac1ed"
             },
+            Test {
+                input: big_str(),
+                output_str: ~"ca0c67cb7af62cb1d306a906591003de38925a60b749337c5e29d76d919b03d051b96faade043e6667f210aa3d4bbbf1a7f7ae6d0c81d8d441e8a27216c52212"
+            }
         ];
 
         let tests = wikipedia_tests;
