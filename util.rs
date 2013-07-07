@@ -9,6 +9,9 @@
 // except according to those terms.
 
 use std::cast::transmute;
+use std::num::Zero;
+use std::ops::BitOr;
+use std::uint;
 
 pub fn vec_to_array64(in: &[u8]) -> &[u8, ..8] {
     if(in.len() != 8) {
@@ -49,6 +52,66 @@ pub fn vec_to_array256(in: &[u8]) -> &[u8, ..32] {
         return tmp;
     }
 }
+
+/*
+
+// ConstantTimeCompare returns 1 iff the two equal length slices, x
+// and y, have equal contents. The time taken is a function of the length of
+// the slices and is independent of the contents.
+// Taken from Go's subtle module
+fn constant_time_compare(x: &[u8], y: &[u8]) -> int {
+    let mut v = 0u8;
+
+    // TODO: use zip iterator?
+    // TODO: What if x and y are of differnt lengths?
+    for uint::range(0, x.len()) |i| {
+        v |= x[i] ^ y[i];
+    }
+
+//    return ConstantTimeByteEq(v, 0)
+    return 0;
+}
+
+
+// ConstantTimeSelect returns x if v is 1 and y if v is 0.
+// Its behavior is undefined if v takes any other value.
+fn constant_time_select(v, x, y int) int { return ^(v-1)&x | (v-1)&y }
+
+
+// ConstantTimeByteEq returns 1 if x == y and 0 otherwise.
+func ConstantTimeByteEq(x, y uint8) int {
+        z := ^(x ^ y)
+        z &= z >> 4
+        z &= z >> 2
+        z &= z >> 1
+
+        return int(z)
+}
+
+// ConstantTimeEq returns 1 if x == y and 0 otherwise.
+func ConstantTimeEq(x, y int32) int {
+        z := ^(x ^ y)
+        z &= z >> 16
+        z &= z >> 8
+        z &= z >> 4
+        z &= z >> 2
+        z &= z >> 1
+
+        return int(z & 1)
+}
+
+// ConstantTimeCopy copies the contents of y into x iff v == 1. If v == 0, x is left unchanged.
+// Its behavior is undefined if v takes any other value.
+func ConstantTimeCopy(v int, x, y []byte) {
+        xmask := byte(v - 1)
+        ymask := byte(^(v - 1))
+        for i := 0; i < len(x); i++ {
+                x[i] = x[i]&xmask | y[i]&ymask
+        }
+        return
+}
+*/
+
 
 // This should go in either 'sys' or 'os'
 #[cfg(target_arch = "x86")]

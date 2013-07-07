@@ -40,26 +40,26 @@ impl AesNi128Decryptor {
     }
 }
 
-impl SymmetricBlockEncryptor128 for AesNi128Encryptor {
-    fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+impl BlockEncryptor128 for AesNi128Encryptor {
+    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
         return encrypt_block_aseni(10, in, self.kw);
     }
 }
 
-impl SymmetricKeyedCipher128 for AesNi128Encryptor {
-    fn init(&mut self, key: &[u8, ..16]) {
+impl SymmetricCipher128 for AesNi128Encryptor {
+    fn set_key(&mut self, key: &[u8, ..16]) {
         self.kw = setup_working_key_aesni_128(key, Encryption);
     }
 }
 
-impl SymmetricBlockDecryptor128 for AesNi128Decryptor {
-    fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+impl BlockDecryptor128 for AesNi128Decryptor {
+    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
         return decrypt_block_aseni(10, in, self.kw);
     }
 }
 
-impl SymmetricKeyedCipher128 for AesNi128Decryptor {
-    fn init(&mut self, key: &[u8, ..16]) {
+impl SymmetricCipher128 for AesNi128Decryptor {
+    fn set_key(&mut self, key: &[u8, ..16]) {
         self.kw = setup_working_key_aesni_128(key, Decryption);
     }
 }
@@ -88,26 +88,26 @@ impl AesNi192Decryptor {
     }
 }
 
-impl SymmetricBlockEncryptor128 for AesNi192Encryptor {
-    fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+impl BlockEncryptor128 for AesNi192Encryptor {
+    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
         return encrypt_block_aseni(12, in, self.kw);
     }
 }
 
-impl SymmetricKeyedCipher192 for AesNi192Encryptor {
-    fn init(&mut self, key: &[u8, ..24]) {
+impl SymmetricCipher192 for AesNi192Encryptor {
+    fn set_key(&mut self, key: &[u8, ..24]) {
         self.kw = setup_working_key_aesni_192(key, Encryption);
     }
 }
 
-impl SymmetricBlockDecryptor128 for AesNi192Decryptor {
-    fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+impl BlockDecryptor128 for AesNi192Decryptor {
+    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
         return decrypt_block_aseni(12, in, self.kw);
     }
 }
 
-impl SymmetricKeyedCipher192 for AesNi192Decryptor {
-    fn init(&mut self, key: &[u8, ..24]) {
+impl SymmetricCipher192 for AesNi192Decryptor {
+    fn set_key(&mut self, key: &[u8, ..24]) {
         self.kw = setup_working_key_aesni_192(key, Decryption);
     }
 }
@@ -136,26 +136,26 @@ impl AesNi256Decryptor {
     }
 }
 
-impl SymmetricBlockEncryptor128 for AesNi256Encryptor {
-    fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+impl BlockEncryptor128 for AesNi256Encryptor {
+    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
         return encrypt_block_aseni(14, in, self.kw);
     }
 }
 
-impl SymmetricKeyedCipher256 for AesNi256Encryptor {
-    fn init(&mut self, key: &[u8, ..32]) {
+impl SymmetricCipher256 for AesNi256Encryptor {
+    fn set_key(&mut self, key: &[u8, ..32]) {
         self.kw = setup_working_key_aesni_256(key, Encryption);
     }
 }
 
-impl SymmetricBlockDecryptor128 for AesNi256Decryptor {
-    fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+impl BlockDecryptor128 for AesNi256Decryptor {
+    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
         return decrypt_block_aseni(14, in, self.kw);
     }
 }
 
-impl SymmetricKeyedCipher256 for AesNi256Decryptor {
-    fn init(&mut self, key: &[u8, ..32]) {
+impl SymmetricCipher256 for AesNi256Decryptor {
+    fn set_key(&mut self, key: &[u8, ..32]) {
         self.kw = setup_working_key_aesni_256(key, Decryption);
     }
 }

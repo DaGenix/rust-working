@@ -13,26 +13,61 @@ use std::cast::transmute;
 use std::vec::bytes;
 
 
-pub trait SymmetricKeyedCipher128 {
-    fn init(&mut self, key: &[u8, ..16]);
+pub trait SymmetricCipher128 {
+    fn set_key(&mut self, key: &[u8, ..16]);
 }
 
-pub trait SymmetricKeyedCipher192 {
-    fn init(&mut self, key: &[u8, ..24]);
+pub trait SymmetricCipher192 {
+    fn set_key(&mut self, key: &[u8, ..24]);
 }
 
-pub trait SymmetricKeyedCipher256 {
-    fn init(&mut self, key: &[u8, ..32]);
+pub trait SymmetricCipher256 {
+    fn set_key(&mut self, key: &[u8, ..32]);
 }
 
-pub trait SymmetricBlockEncryptor128 {
-    fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16];
+pub trait BlockEncryptor128 {
+    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16];
 }
 
-pub trait SymmetricBlockDecryptor128 {
-    fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16];
+pub trait BlockDecryptor128 {
+    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16];
 }
 
+
+
+/*
+
+pub trait SymmetricCipher128
+pub trait SymmetricCipher192
+pub trait SymmetricCipher256
+
+pub trait BlockEncryptor128
+pub trait BlockDecryptor128
+
+pub trait PaddedEncryptionMode128
+pub trait PaddedDecryptionMode128
+struct EcbModeWithNoPadding128
+struct EcbModeWithCtsPadding128
+struct EcbModeWithPkcs7Padding128
+struct CbcModeWithNoPadding128
+struct CbcModeWithCtsPadding128
+struct CbcModeWithPkcs7Padding128
+
+pub trait EncryptionBuffer
+pub trait DecryptionBuffer
+struct PaddedEncryptionBuffer128
+struct PaddedDecryptionBuffer128
+struct StreamEncryptionBuffer
+struct StreamDecryptionBuffer
+
+pub trait StreamEncryptor
+pub trait StreamDecryptor
+struct CtrMode
+struct CtsMode
+struct CfbMode
+struct OfbMode
+
+*/
 
 
 

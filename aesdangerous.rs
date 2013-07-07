@@ -51,8 +51,8 @@ macro_rules! define_aes_enc(
         $name:ident,
         $rounds:expr
     ) => (
-        impl SymmetricBlockEncryptor128 for $name {
-            fn encrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+        impl BlockEncryptor128 for $name {
+            fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
                 assert!(self.initialized);
                 return encrypt_block($rounds, in, self.working_key);
             }
@@ -65,8 +65,8 @@ macro_rules! define_aes_dec(
         $name:ident,
         $rounds:expr
     ) => (
-        impl SymmetricBlockDecryptor128 for $name {
-            fn decrypt_block(&mut self, in: &[u8, ..16]) -> [u8, ..16] {
+        impl BlockDecryptor128 for $name {
+            fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
                 assert!(self.initialized);
                 return decrypt_block($rounds, in, self.working_key);
             }
@@ -83,7 +83,7 @@ macro_rules! define_aes_init(
         $rounds:expr
     ) => (
         impl $tra for $name {
-            fn init(&mut self, key: $keytype) {
+            fn set_key(&mut self, key: $keytype) {
                 setup_working_key(*key, $rounds, $mode, self.working_key);
                 self.initialized = true;
             }
@@ -97,8 +97,8 @@ define_aes_impl!(Aes128Encrypt, Encryption, 10, 16)
 define_aes_impl!(Aes128Decrypt, Decryption, 10, 16)
 define_aes_enc!(Aes128Encrypt, 10)
 define_aes_dec!(Aes128Decrypt, 10)
-define_aes_init!(Aes128Encrypt, SymmetricKeyedCipher128, &[u8, ..16], Encryption, 10)
-define_aes_init!(Aes128Decrypt, SymmetricKeyedCipher128, &[u8, ..16], Decryption, 10)
+define_aes_init!(Aes128Encrypt, SymmetricCipher128, &[u8, ..16], Encryption, 10)
+define_aes_init!(Aes128Decrypt, SymmetricCipher128, &[u8, ..16], Decryption, 10)
 
 define_aes_struct!(Aes192Encrypt, 12)
 define_aes_struct!(Aes192Decrypt, 12)
@@ -106,8 +106,8 @@ define_aes_impl!(Aes192Encrypt, Encryption, 12, 24)
 define_aes_impl!(Aes192Decrypt, Decryption, 12, 24)
 define_aes_enc!(Aes192Encrypt, 12)
 define_aes_dec!(Aes192Decrypt, 12)
-define_aes_init!(Aes192Encrypt, SymmetricKeyedCipher192, &[u8, ..24], Encryption, 12)
-define_aes_init!(Aes192Decrypt, SymmetricKeyedCipher192, &[u8, ..24], Decryption, 12)
+define_aes_init!(Aes192Encrypt, SymmetricCipher192, &[u8, ..24], Encryption, 12)
+define_aes_init!(Aes192Decrypt, SymmetricCipher192, &[u8, ..24], Decryption, 12)
 
 define_aes_struct!(Aes256Encrypt, 14)
 define_aes_struct!(Aes256Decrypt, 14)
@@ -115,8 +115,8 @@ define_aes_impl!(Aes256Encrypt, Encryption, 14, 32)
 define_aes_impl!(Aes256Decrypt, Decryption, 14, 32)
 define_aes_enc!(Aes256Encrypt, 14)
 define_aes_dec!(Aes256Decrypt, 14)
-define_aes_init!(Aes256Encrypt, SymmetricKeyedCipher256, &[u8, ..32], Encryption, 14)
-define_aes_init!(Aes256Decrypt, SymmetricKeyedCipher256, &[u8, ..32], Decryption, 14)
+define_aes_init!(Aes256Encrypt, SymmetricCipher256, &[u8, ..32], Encryption, 14)
+define_aes_init!(Aes256Decrypt, SymmetricCipher256, &[u8, ..32], Decryption, 14)
 
 fn shift(r: u32, shift: u32) -> u32 {
     return (r >> shift) | (r << -shift);
