@@ -5,4 +5,3 @@
 
 pub mod sha2;
 pub mod digest;
-pub mod aes;
