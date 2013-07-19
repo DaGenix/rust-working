@@ -12,6 +12,7 @@ use std::uint;
 
 use digest::Digest;
 
+
 // Copy all of src into dst. The vectors must be of equal size.
 fn cpy(dst: &mut [u8], src: &[u8]) {
     use std::ptr::copy_memory;
@@ -132,7 +133,9 @@ impl Engine512State {
             )
         )
 
-        macro_rules! sha512_round( ($A:ident, $B:ident, $C:ident, $D:ident, $E:ident, $F:ident, $G:ident, $H:ident, $t:expr) => (
+        macro_rules! sha512_round(
+            ($A:ident, $B:ident, $C:ident, $D:ident,
+             $E:ident, $F:ident, $G:ident, $H:ident, $t:expr) => (
                 {
                     $H += sum1($E) + ch($E, $F, $G) + K64[$t] + W[$t];
                     $D += $H;
@@ -140,8 +143,6 @@ impl Engine512State {
                 }
             )
         )
-
-        let mut W = [0u64, ..80];
 
         let mut a = self.H0;
         let mut b = self.H1;
@@ -152,8 +153,12 @@ impl Engine512State {
         let mut g = self.H6;
         let mut h = self.H7;
 
+        let mut W = [0u64, ..80];
+
         readu64v(W.mut_slice(0, 16), data);
 
+        // Putting the message schedule inside the same loop as the round calculations allows for
+        // the compiler to generate better code.
         for uint::range_step(0, 64, 8) |t| {
             schedule512_round!(t + 16);
             schedule512_round!(t + 17);
@@ -230,6 +235,7 @@ impl BitCounter {
     }
 }
 
+
 struct Engine512 {
     bit_counter: BitCounter,
     buffer: [u8, ..128],
@@ -297,16 +303,10 @@ impl Engine512 {
         self.buffer[self.buffer_idx] = 128;
         self.buffer_idx += 1;
 
-        // pad out the remainder of the word with 0s
-        while self.buffer_idx % 8 != 0 {
-            self.buffer[self.buffer_idx] = 0;
-            self.buffer_idx += 1;
-        }
-
         // if we have space for the bit counts in the current block, we can put them there,
         // otherwise, we need to fill the current block with 0s, process it, and then put the
         // bit count at the end of the next block and then process it.
-        if self.buffer_idx < 112 {
+        if self.buffer_idx <= 112 {
             zero(self.buffer.mut_slice(self.buffer_idx, 112));
         } else {
             zero(self.buffer.mut_slice(self.buffer_idx, 128));
