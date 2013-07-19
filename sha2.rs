@@ -118,12 +118,22 @@ fn process_block(state: &mut Engine512State, data: &[u8]) {
         ((x << 45) | (x >> 19)) ^ ((x << 3) | (x >> 61)) ^ (x >> 6)
     }
 
+    fn bswap(W: &mut[u64], in: &[u8], pos: uint) {
+        use std::cast::transmute;
+        use std::unstable::intrinsics::to_be64;
+        unsafe {
+            let x: *mut i64 = transmute(W.unsafe_mut_ref(pos));
+            let y: *i64 = transmute(in.unsafe_ref(pos * 8));
+            *x = to_be64(*y);
+        }
+    }
+
     macro_rules! schedule512_round( ($t:expr) => (
             W[$t] = sigma1(W[$t - 2]) + W[$t - 7] + sigma0(W[$t - 15]) + W[$t - 16];
         )
     )
 
-    macro_rules! sha512_round( ( $A:ident, $B:ident, $C:ident, $D:ident, $E:ident, $F:ident, $G:ident, $H:ident, $t:expr ) => (
+    macro_rules! sha512_round( ($A:ident, $B:ident, $C:ident, $D:ident, $E:ident, $F:ident, $G:ident, $H:ident, $t:expr) => (
             {
                 $H += sum1($E) + ch($E, $F, $G) + K64[$t] + W[$t];
                 $D += $H;
@@ -143,36 +153,26 @@ fn process_block(state: &mut Engine512State, data: &[u8]) {
     let mut g = state.H6;
     let mut h = state.H7;
 
-    unsafe {
-        use std::cast::transmute;
-        use std::unstable::intrinsics::to_be64;
-        let mut x: *mut i64 = transmute(W.unsafe_mut_ref(0));
-        let mut y: *i64 = transmute(data.unsafe_ref(0));
-        for uint::range(0, 16) |_| {
-            *x = to_be64(*y);
-            x = x.offset(1);
-            y = y.offset(1);
-        }
+    for uint::range(0, 16) |i| {
+        bswap(W, data, i);
     }
 
     for uint::range_step(0, 64, 8) |t| {
         schedule512_round!(t + 16);
         schedule512_round!(t + 17);
-        sha512_round!(a, b, c, d, e, f, g, h, t);
-        sha512_round!(h, a, b, c, d, e, f, g, t + 1);
-
         schedule512_round!(t + 18);
         schedule512_round!(t + 19);
-        sha512_round!(g, h, a, b, c, d, e, f, t + 2);
-        sha512_round!(f, g, h, a, b, c, d, e, t + 3);
-
         schedule512_round!(t + 20);
         schedule512_round!(t + 21);
-        sha512_round!(e, f, g, h, a, b, c, d, t + 4);
-        sha512_round!(d, e, f, g, h, a, b, c, t + 5);
-
         schedule512_round!(t + 22);
         schedule512_round!(t + 23);
+
+        sha512_round!(a, b, c, d, e, f, g, h, t);
+        sha512_round!(h, a, b, c, d, e, f, g, t + 1);
+        sha512_round!(g, h, a, b, c, d, e, f, t + 2);
+        sha512_round!(f, g, h, a, b, c, d, e, t + 3);
+        sha512_round!(e, f, g, h, a, b, c, d, t + 4);
+        sha512_round!(d, e, f, g, h, a, b, c, t + 5);
         sha512_round!(c, d, e, f, g, h, a, b, t + 6);
         sha512_round!(b, c, d, e, f, g, h, a, t + 7);
     }
@@ -187,6 +187,39 @@ fn process_block(state: &mut Engine512State, data: &[u8]) {
         sha512_round!(c, d, e, f, g, h, a, b, t + 6);
         sha512_round!(b, c, d, e, f, g, h, a, t + 7);
     }
+
+    /*
+    for uint::range_step(0, 64, 8) |t| {
+        schedule512_round!(t + 16);
+        schedule512_round!(t + 17);
+        schedule512_round!(t + 18);
+        schedule512_round!(t + 19);
+        schedule512_round!(t + 20);
+        schedule512_round!(t + 21);
+        schedule512_round!(t + 22);
+        schedule512_round!(t + 23);
+
+        sha512_round!(a, b, c, d, e, f, g, h, t);
+        sha512_round!(h, a, b, c, d, e, f, g, t + 1);
+        sha512_round!(g, h, a, b, c, d, e, f, t + 2);
+        sha512_round!(f, g, h, a, b, c, d, e, t + 3);
+        sha512_round!(e, f, g, h, a, b, c, d, t + 4);
+        sha512_round!(d, e, f, g, h, a, b, c, t + 5);
+        sha512_round!(c, d, e, f, g, h, a, b, t + 6);
+        sha512_round!(b, c, d, e, f, g, h, a, t + 7);
+    }
+
+    for uint::range_step(64, 80, 8) |t| {
+        sha512_round!(a, b, c, d, e, f, g, h, t);
+        sha512_round!(h, a, b, c, d, e, f, g, t + 1);
+        sha512_round!(g, h, a, b, c, d, e, f, t + 2);
+        sha512_round!(f, g, h, a, b, c, d, e, t + 3);
+        sha512_round!(e, f, g, h, a, b, c, d, t + 4);
+        sha512_round!(d, e, f, g, h, a, b, c, t + 5);
+        sha512_round!(c, d, e, f, g, h, a, b, t + 6);
+        sha512_round!(b, c, d, e, f, g, h, a, t + 7);
+    }
+    */
 
     state.H0 += a;
     state.H1 += b;
@@ -392,6 +425,25 @@ impl Engine512 {
     fn result_512(&mut self, out: &mut [u8]) {
         self.finish();
 
+        fn bswap(dst: &mut[u8], pos: uint, in: u64) {
+            use std::cast::transmute;
+            use std::unstable::intrinsics::to_be64;
+            unsafe {
+                let x: *mut i64 = transmute(dst.unsafe_mut_ref(pos));
+                *x = to_be64(in as i64);
+            }
+        }
+
+        bswap(out, 0, self.state.H0);
+        bswap(out, 8, self.state.H1);
+        bswap(out, 16, self.state.H2);
+        bswap(out, 24, self.state.H3);
+        bswap(out, 32, self.state.H4);
+        bswap(out, 40, self.state.H5);
+        bswap(out, 48, self.state.H6);
+        bswap(out, 56, self.state.H7);
+
+        /*
         from_u64(self.state.H0, out.mut_slice(0, 8));
         from_u64(self.state.H1, out.mut_slice(8, 16));
         from_u64(self.state.H2, out.mut_slice(16, 24));
@@ -400,6 +452,7 @@ impl Engine512 {
         from_u64(self.state.H5, out.mut_slice(40, 48));
         from_u64(self.state.H6, out.mut_slice(48, 56));
         from_u64(self.state.H7, out.mut_slice(56, 64));
+        */
     }
 
     fn result_384(&mut self, out: &mut [u8]) {
@@ -1306,6 +1359,8 @@ fn rdtsc() -> u64 {
 
 #[main]
 fn main() {
+    use digest::{Digest, DigestUtil};
+
     let data = [0u8, ..128];
     let mut state = Engine512State {
         H0: 0x6a09e667f3bcc908u64,
@@ -1318,7 +1373,12 @@ fn main() {
         H7: 0x5be0cd19137e2179u64,
     };
 
-    let count = 10000000;
+    let input = ~"The quick brown fox jumps over the lazy dog";
+    let mut result = [0u8, ..64];
+    let mut sh = ~Sha512::new();
+//     let mut sh = ~Sha512Trunc224::new();
+
+    let count = 100000;
     let mut cycles = 0u64;
     let mut i = 0;
 
@@ -1332,7 +1392,10 @@ fn main() {
     while i < count {
         i += 1;
         let start = rdtsc();
-        process_block(&mut state, data);
+        sh.reset();
+        (*sh).input_str(input);
+        sh.result(result);
+//        process_block(&mut state, data);
         let end = rdtsc();
         cycles += end - start;
     }
