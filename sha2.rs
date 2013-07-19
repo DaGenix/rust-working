@@ -13,6 +13,46 @@ use std::uint;
 
 use digest::Digest;
 
+fn cpy(dst: &mut [u8], src: &[u8]) {
+    use std::ptr::copy_memory;
+    assert!(dst.len() == src.len());
+    unsafe {
+        copy_memory(dst.unsafe_mut_ref(0), src.unsafe_ref(0), dst.len());
+    }
+}
+
+fn zero(dst: &mut [u8]) {
+    use std::ptr::zero_memory;
+    unsafe {
+        zero_memory(dst.unsafe_mut_ref(0), dst.len());
+    }
+}
+
+fn writeu64(dst: &mut[u8], in: u64) {
+    use std::cast::transmute;
+    use std::unstable::intrinsics::to_be64;
+    assert!(dst.len() == 8);
+    unsafe {
+        let x: *mut i64 = transmute(dst.unsafe_mut_ref(0));
+        *x = to_be64(in as i64);
+    }
+}
+
+fn readu64v(W: &mut[u64], in: &[u8]) {
+    use std::cast::transmute;
+    use std::unstable::intrinsics::to_be64;
+    assert!(W.len() * 8 == in.len());
+    unsafe {
+        let mut x: *mut i64 = transmute(W.unsafe_mut_ref(0));
+        let mut y: *i64 = transmute(in.unsafe_ref(0));
+        for uint::range(0, W.len()) |_| {
+            *x = to_be64(*y);
+            x = x.offset(1);
+            y = y.offset(8);
+        }
+    }
+}
+
 // BitCounter is a specialized structure intended simply for counting the
 // number of bits that have been processed by the SHA-2 512 family of functions.
 // It does very little overflow checking since such checking is not necessary
@@ -67,30 +107,6 @@ struct Engine512 {
     finished: bool,
 }
 
-// Convert a [u8] to a u64 in big-endian format
-fn to_u64(in: &[u8]) -> u64 {
-    (in[0] as u64) << 56 |
-    (in[1] as u64) << 48 |
-    (in[2] as u64) << 40 |
-    (in[3] as u64) << 32 |
-    (in[4] as u64) << 24 |
-    (in[5] as u64) << 16 |
-    (in[6] as u64) << 8 |
-    (in[7] as u64)
-}
-
-// Convert a u64 to a [u8] in big endian format
-fn from_u64(in: u64, out: &mut [u8]) {
-    out[0] = (in >> 56) as u8;
-    out[1] = (in >> 48) as u8;
-    out[2] = (in >> 40) as u8;
-    out[3] = (in >> 32) as u8;
-    out[4] = (in >> 24) as u8;
-    out[5] = (in >> 16) as u8;
-    out[6] = (in >> 8) as u8;
-    out[7] = in as u8;
-}
-
 #[cfg(new)]
 fn process_block(state: &mut Engine512State, data: &[u8]) {
 
@@ -118,16 +134,6 @@ fn process_block(state: &mut Engine512State, data: &[u8]) {
         ((x << 45) | (x >> 19)) ^ ((x << 3) | (x >> 61)) ^ (x >> 6)
     }
 
-    fn bswap(W: &mut[u64], in: &[u8], pos: uint) {
-        use std::cast::transmute;
-        use std::unstable::intrinsics::to_be64;
-        unsafe {
-            let x: *mut i64 = transmute(W.unsafe_mut_ref(pos));
-            let y: *i64 = transmute(in.unsafe_ref(pos * 8));
-            *x = to_be64(*y);
-        }
-    }
-
     macro_rules! schedule512_round( ($t:expr) => (
             W[$t] = sigma1(W[$t - 2]) + W[$t - 7] + sigma0(W[$t - 15]) + W[$t - 16];
         )
@@ -153,9 +159,7 @@ fn process_block(state: &mut Engine512State, data: &[u8]) {
     let mut g = state.H6;
     let mut h = state.H7;
 
-    for uint::range(0, 16) |i| {
-        bswap(W, data, i);
-    }
+    readu64v(W.mut_slice(0, 16), data);
 
     for uint::range_step(0, 64, 8) |t| {
         schedule512_round!(t + 16);
@@ -187,39 +191,6 @@ fn process_block(state: &mut Engine512State, data: &[u8]) {
         sha512_round!(c, d, e, f, g, h, a, b, t + 6);
         sha512_round!(b, c, d, e, f, g, h, a, t + 7);
     }
-
-    /*
-    for uint::range_step(0, 64, 8) |t| {
-        schedule512_round!(t + 16);
-        schedule512_round!(t + 17);
-        schedule512_round!(t + 18);
-        schedule512_round!(t + 19);
-        schedule512_round!(t + 20);
-        schedule512_round!(t + 21);
-        schedule512_round!(t + 22);
-        schedule512_round!(t + 23);
-
-        sha512_round!(a, b, c, d, e, f, g, h, t);
-        sha512_round!(h, a, b, c, d, e, f, g, t + 1);
-        sha512_round!(g, h, a, b, c, d, e, f, t + 2);
-        sha512_round!(f, g, h, a, b, c, d, e, t + 3);
-        sha512_round!(e, f, g, h, a, b, c, d, t + 4);
-        sha512_round!(d, e, f, g, h, a, b, c, t + 5);
-        sha512_round!(c, d, e, f, g, h, a, b, t + 6);
-        sha512_round!(b, c, d, e, f, g, h, a, t + 7);
-    }
-
-    for uint::range_step(64, 80, 8) |t| {
-        sha512_round!(a, b, c, d, e, f, g, h, t);
-        sha512_round!(h, a, b, c, d, e, f, g, t + 1);
-        sha512_round!(g, h, a, b, c, d, e, f, t + 2);
-        sha512_round!(f, g, h, a, b, c, d, e, t + 3);
-        sha512_round!(e, f, g, h, a, b, c, d, t + 4);
-        sha512_round!(d, e, f, g, h, a, b, c, t + 5);
-        sha512_round!(c, d, e, f, g, h, a, b, t + 6);
-        sha512_round!(b, c, d, e, f, g, h, a, t + 7);
-    }
-    */
 
     state.H0 += a;
     state.H1 += b;
@@ -230,22 +201,6 @@ fn process_block(state: &mut Engine512State, data: &[u8]) {
     state.H6 += g;
     state.H7 += h;
 }
-
-fn memcpy(dst: &mut [u8], src: &[u8]) {
-    use std::ptr::copy_memory;
-    assert!(dst.len() == src.len());
-    unsafe {
-        copy_memory(dst.unsafe_mut_ref(0), src.unsafe_ref(0), dst.len());
-    }
-}
-
-fn memzero(dst: &mut [u8]) {
-    use std::ptr::zero_memory;
-    unsafe {
-        zero_memory(dst.unsafe_mut_ref(0), dst.len());
-    }
-}
-
 
 impl Engine512 {
     fn input_vec(&mut self, in: &[u8]) {
@@ -259,13 +214,13 @@ impl Engine512 {
             let buffer_remaining = 128 - self.buffer_idx;
             if in.len() >= buffer_remaining {
                 self.bit_counter.add_bytes(buffer_remaining);
-                memcpy(self.buffer.mut_slice(self.buffer_idx, 128), in.slice(0, buffer_remaining));
+                cpy(self.buffer.mut_slice(self.buffer_idx, 128), in.slice(0, buffer_remaining));
                 self.buffer_idx = 0;
                 process_block(&mut self.state, self.buffer);
                 i += buffer_remaining;
             } else {
                 self.bit_counter.add_bytes(in.len());
-                memcpy(self.buffer.mut_slice(self.buffer_idx, self.buffer_idx + in.len()), in);
+                cpy(self.buffer.mut_slice(self.buffer_idx, self.buffer_idx + in.len()), in);
                 self.buffer_idx += in.len();
                 return;
             }
@@ -283,7 +238,7 @@ impl Engine512 {
         // currently empty)
         let in_remaining = in.len() - i;
         self.bit_counter.add_bytes(in_remaining);
-        memcpy(self.buffer.mut_slice(0, in_remaining), in.slice(i, in.len()));
+        cpy(self.buffer.mut_slice(0, in_remaining), in.slice(i, in.len()));
         self.buffer_idx += in_remaining;
     }
 
@@ -291,99 +246,6 @@ impl Engine512 {
         self.bit_counter.reset();
         self.buffer_idx = 0;
         self.finished = false;
-    }
-
-    #[cfg(old)]
-    fn process_block(&mut self) {
-        fn ch(x: u64, y: u64, z: u64) -> u64 {
-            ((x & y) ^ ((!x) & z))
-        }
-
-        fn maj(x: u64, y: u64, z: u64) -> u64 {
-            ((x & y) ^ (x & z) ^ (y & z))
-        }
-
-        fn sum0(x: u64) -> u64 {
-            ((x << 36) | (x >> 28)) ^ ((x << 30) | (x >> 34)) ^ ((x << 25) | (x >> 39))
-        }
-
-        fn sum1(x: u64) -> u64 {
-            ((x << 50) | (x >> 14)) ^ ((x << 46) | (x >> 18)) ^ ((x << 23) | (x >> 41))
-        }
-
-        fn sigma0(x: u64) -> u64 {
-            ((x << 63) | (x >> 1)) ^ ((x << 56) | (x >> 8)) ^ (x >> 7)
-        }
-
-        fn sigma1(x: u64) -> u64 {
-            ((x << 45) | (x >> 19)) ^ ((x << 3) | (x >> 61)) ^ (x >> 6)
-        }
-
-        for uint::range(16, 80) |t| {
-            self.W[t] = sigma1(self.W[t - 2]) + self.W[t - 7] + sigma0(self.W[t - 15]) +
-                self.W[t - 16];
-        }
-
-        let mut a = self.H0;
-        let mut b = self.H1;
-        let mut c = self.H2;
-        let mut d = self.H3;
-        let mut e = self.H4;
-        let mut f = self.H5;
-        let mut g = self.H6;
-        let mut h = self.H7;
-
-        let mut t = 0;
-        for uint::range(0, 10) |_| {
-            h += sum1(e) + ch(e, f, g) + K64[t] + self.W[t];
-            d += h;
-            h += sum0(a) + maj(a, b, c);
-            t += 1;
-
-            g += sum1(d) + ch(d, e, f) + K64[t] + self.W[t];
-            c += g;
-            g += sum0(h) + maj(h, a, b);
-            t += 1;
-
-            f += sum1(c) + ch(c, d, e) + K64[t] + self.W[t];
-            b += f;
-            f += sum0(g) + maj(g, h, a);
-            t += 1;
-
-            e += sum1(b) + ch(b, c, d) + K64[t] + self.W[t];
-            a += e;
-            e += sum0(f) + maj(f, g, h);
-            t += 1;
-
-            d += sum1(a) + ch(a, b, c) + K64[t] + self.W[t];
-            h += d;
-            d += sum0(e) + maj(e, f, g);
-            t += 1;
-
-            c += sum1(h) + ch(h, a, b) + K64[t] + self.W[t];
-            g += c;
-            c += sum0(d) + maj(d, e, f);
-            t += 1;
-
-            b += sum1(g) + ch(g, h, a) + K64[t] + self.W[t];
-            f += b;
-            b += sum0(c) + maj(c, d, e);
-            t += 1;
-
-            a += sum1(f) + ch(f, g, h) + K64[t] + self.W[t];
-            e += a;
-            a += sum0(b) + maj(b, c, d);
-            t += 1;
-        }
-
-        self.H0 += a;
-        self.H1 += b;
-        self.H2 += c;
-        self.H3 += d;
-        self.H4 += e;
-        self.H5 += f;
-        self.H6 += g;
-        self.H7 += h;
     }
 
     fn finish(&mut self) {
@@ -409,14 +271,14 @@ impl Engine512 {
         // otherwise, we need to fill the current block with 0s, process it, and then put the
         // bit count at the end of the next block and then process it.
         if self.buffer_idx < 112 {
-            memzero(self.buffer.mut_slice(self.buffer_idx, 112));
+            zero(self.buffer.mut_slice(self.buffer_idx, 112));
         } else {
-            memzero(self.buffer.mut_slice(self.buffer_idx, 128));
+            zero(self.buffer.mut_slice(self.buffer_idx, 128));
             process_block(&mut self.state, self.buffer);
-            memzero(self.buffer.mut_slice(0, 112));
+            zero(self.buffer.mut_slice(0, 112));
         }
-        from_u64(high_bit_count, self.buffer.mut_slice(112, 120));
-        from_u64(low_bit_count, self.buffer.mut_slice(120, 128));
+        writeu64(self.buffer.mut_slice(112, 120), high_bit_count);
+        writeu64(self.buffer.mut_slice(120, 128), low_bit_count);
         process_block(&mut self.state, self.buffer);
 
         self.finished = true;
@@ -425,63 +287,43 @@ impl Engine512 {
     fn result_512(&mut self, out: &mut [u8]) {
         self.finish();
 
-        fn bswap(dst: &mut[u8], pos: uint, in: u64) {
-            use std::cast::transmute;
-            use std::unstable::intrinsics::to_be64;
-            unsafe {
-                let x: *mut i64 = transmute(dst.unsafe_mut_ref(pos));
-                *x = to_be64(in as i64);
-            }
-        }
-
-        bswap(out, 0, self.state.H0);
-        bswap(out, 8, self.state.H1);
-        bswap(out, 16, self.state.H2);
-        bswap(out, 24, self.state.H3);
-        bswap(out, 32, self.state.H4);
-        bswap(out, 40, self.state.H5);
-        bswap(out, 48, self.state.H6);
-        bswap(out, 56, self.state.H7);
-
-        /*
-        from_u64(self.state.H0, out.mut_slice(0, 8));
-        from_u64(self.state.H1, out.mut_slice(8, 16));
-        from_u64(self.state.H2, out.mut_slice(16, 24));
-        from_u64(self.state.H3, out.mut_slice(24, 32));
-        from_u64(self.state.H4, out.mut_slice(32, 40));
-        from_u64(self.state.H5, out.mut_slice(40, 48));
-        from_u64(self.state.H6, out.mut_slice(48, 56));
-        from_u64(self.state.H7, out.mut_slice(56, 64));
-        */
+        writeu64(out.mut_slice(0, 8), self.state.H0);
+        writeu64(out.mut_slice(8, 16), self.state.H1);
+        writeu64(out.mut_slice(16, 24), self.state.H2);
+        writeu64(out.mut_slice(24, 32), self.state.H3);
+        writeu64(out.mut_slice(32, 40), self.state.H4);
+        writeu64(out.mut_slice(40, 48), self.state.H5);
+        writeu64(out.mut_slice(48, 56), self.state.H6);
+        writeu64(out.mut_slice(56, 64), self.state.H7);
     }
 
     fn result_384(&mut self, out: &mut [u8]) {
         self.finish();
 
-        from_u64(self.state.H0, out.mut_slice(0, 8));
-        from_u64(self.state.H1, out.mut_slice(8, 16));
-        from_u64(self.state.H2, out.mut_slice(16, 24));
-        from_u64(self.state.H3, out.mut_slice(24, 32));
-        from_u64(self.state.H4, out.mut_slice(32, 40));
-        from_u64(self.state.H5, out.mut_slice(40, 48));
+//         from_u64(self.state.H0, out.mut_slice(0, 8));
+//         from_u64(self.state.H1, out.mut_slice(8, 16));
+//         from_u64(self.state.H2, out.mut_slice(16, 24));
+//         from_u64(self.state.H3, out.mut_slice(24, 32));
+//         from_u64(self.state.H4, out.mut_slice(32, 40));
+//         from_u64(self.state.H5, out.mut_slice(40, 48));
     }
 
     fn result_256(&mut self, out: &mut [u8]) {
         self.finish();
 
-        from_u64(self.state.H0, out.mut_slice(0, 8));
-        from_u64(self.state.H1, out.mut_slice(8, 16));
-        from_u64(self.state.H2, out.mut_slice(16, 24));
-        from_u64(self.state.H3, out.mut_slice(24, 32));
+//         from_u64(self.state.H0, out.mut_slice(0, 8));
+//         from_u64(self.state.H1, out.mut_slice(8, 16));
+//         from_u64(self.state.H2, out.mut_slice(16, 24));
+//         from_u64(self.state.H3, out.mut_slice(24, 32));
     }
 
     fn result_224(&mut self, out: &mut [u8]) {
         self.finish();
 
-        from_u64(self.state.H0, out.mut_slice(0, 8));
-        from_u64(self.state.H1, out.mut_slice(8, 16));
-        from_u64(self.state.H2, out.mut_slice(16, 24));
-        from_u32((self.state.H3 >> 32) as u32, out.mut_slice(24, 28));
+//         from_u64(self.state.H0, out.mut_slice(0, 8));
+//         from_u64(self.state.H1, out.mut_slice(8, 16));
+//         from_u64(self.state.H2, out.mut_slice(16, 24));
+//         from_u32((self.state.H3 >> 32) as u32, out.mut_slice(24, 28));
     }
 }
 
@@ -1395,7 +1237,7 @@ fn main() {
         sh.reset();
         (*sh).input_str(input);
         sh.result(result);
-//        process_block(&mut state, data);
+//         process_block(&mut state, data);
         let end = rdtsc();
         cycles += end - start;
     }
