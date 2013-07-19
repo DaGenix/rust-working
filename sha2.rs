@@ -8,11 +8,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-
 use std::uint;
 
 use digest::Digest;
 
+// Copy all of src into dst. The vectors must be of equal size.
 fn cpy(dst: &mut [u8], src: &[u8]) {
     use std::ptr::copy_memory;
     assert!(dst.len() == src.len());
@@ -21,6 +21,7 @@ fn cpy(dst: &mut [u8], src: &[u8]) {
     }
 }
 
+// Zero out the vector
 fn zero(dst: &mut [u8]) {
     use std::ptr::zero_memory;
     unsafe {
@@ -28,6 +29,8 @@ fn zero(dst: &mut [u8]) {
     }
 }
 
+// Write a u64 into the vector, which must be 8 bytes long. The value
+// is written in big-endian form.
 fn writeu64(dst: &mut[u8], in: u64) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_be64;
@@ -38,20 +41,161 @@ fn writeu64(dst: &mut[u8], in: u64) {
     }
 }
 
-fn readu64v(W: &mut[u64], in: &[u8]) {
+// Write a u32 into the vector, which must be 4 bytes long. The value
+// is written in big-endian form.
+fn writeu32(dst: &mut[u8], in: u32) {
+    use std::cast::transmute;
+    use std::unstable::intrinsics::to_be32;
+    assert!(dst.len() == 4);
+    unsafe {
+        let x: *mut i32 = transmute(dst.unsafe_mut_ref(0));
+        *x = to_be32(in as i32);
+    }
+}
+
+// Read a vector of bytes into a vector of u64s. The values are read as
+// if they are in big-endian format.
+fn readu64v(dst: &mut[u64], in: &[u8]) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_be64;
-    assert!(W.len() * 8 == in.len());
+    assert!(dst.len() * 8 == in.len());
     unsafe {
-        let mut x: *mut i64 = transmute(W.unsafe_mut_ref(0));
+        let mut x: *mut i64 = transmute(dst.unsafe_mut_ref(0));
         let mut y: *i64 = transmute(in.unsafe_ref(0));
-        for uint::range(0, W.len()) |_| {
+        for uint::range(0, dst.len()) |_| {
             *x = to_be64(*y);
             x = x.offset(1);
-            y = y.offset(8);
+            y = y.offset(1);
         }
     }
 }
+
+// Read a vector of bytes into a vector of u32s. The values are read as
+// if they are in big-endian format.
+fn readu32v(dst: &mut[u32], in: &[u8]) {
+    use std::cast::transmute;
+    use std::unstable::intrinsics::to_be32;
+    assert!(dst.len() * 4 == in.len());
+    unsafe {
+        let mut x: *mut i32 = transmute(dst.unsafe_mut_ref(0));
+        let mut y: *i32 = transmute(in.unsafe_ref(0));
+        for uint::range(0, dst.len()) |_| {
+            *x = to_be32(*y);
+            x = x.offset(1);
+            y = y.offset(1);
+        }
+    }
+}
+
+
+// A structure that represents that state of a digest computation
+// for the SHA-2 512 family of digest functions
+struct Engine512State {
+    H0: u64,
+    H1: u64,
+    H2: u64,
+    H3: u64,
+    H4: u64,
+    H5: u64,
+    H6: u64,
+    H7: u64,
+}
+
+impl Engine512State {
+    fn process_block(&mut self, data: &[u8]) {
+        fn ch(x: u64, y: u64, z: u64) -> u64 {
+            ((x & y) ^ ((!x) & z))
+        }
+
+        fn maj(x: u64, y: u64, z: u64) -> u64 {
+            ((x & y) ^ (x & z) ^ (y & z))
+        }
+
+        fn sum0(x: u64) -> u64 {
+            ((x << 36) | (x >> 28)) ^ ((x << 30) | (x >> 34)) ^ ((x << 25) | (x >> 39))
+        }
+
+        fn sum1(x: u64) -> u64 {
+            ((x << 50) | (x >> 14)) ^ ((x << 46) | (x >> 18)) ^ ((x << 23) | (x >> 41))
+        }
+
+        fn sigma0(x: u64) -> u64 {
+            ((x << 63) | (x >> 1)) ^ ((x << 56) | (x >> 8)) ^ (x >> 7)
+        }
+
+        fn sigma1(x: u64) -> u64 {
+            ((x << 45) | (x >> 19)) ^ ((x << 3) | (x >> 61)) ^ (x >> 6)
+        }
+
+        macro_rules! schedule512_round( ($t:expr) => (
+                W[$t] = sigma1(W[$t - 2]) + W[$t - 7] + sigma0(W[$t - 15]) + W[$t - 16];
+            )
+        )
+
+        macro_rules! sha512_round( ($A:ident, $B:ident, $C:ident, $D:ident, $E:ident, $F:ident, $G:ident, $H:ident, $t:expr) => (
+                {
+                    $H += sum1($E) + ch($E, $F, $G) + K64[$t] + W[$t];
+                    $D += $H;
+                    $H += sum0($A) + maj($A, $B, $C);
+                }
+            )
+        )
+
+        let mut W = [0u64, ..80];
+
+        let mut a = self.H0;
+        let mut b = self.H1;
+        let mut c = self.H2;
+        let mut d = self.H3;
+        let mut e = self.H4;
+        let mut f = self.H5;
+        let mut g = self.H6;
+        let mut h = self.H7;
+
+        readu64v(W.mut_slice(0, 16), data);
+
+        for uint::range_step(0, 64, 8) |t| {
+            schedule512_round!(t + 16);
+            schedule512_round!(t + 17);
+            schedule512_round!(t + 18);
+            schedule512_round!(t + 19);
+            schedule512_round!(t + 20);
+            schedule512_round!(t + 21);
+            schedule512_round!(t + 22);
+            schedule512_round!(t + 23);
+
+            sha512_round!(a, b, c, d, e, f, g, h, t);
+            sha512_round!(h, a, b, c, d, e, f, g, t + 1);
+            sha512_round!(g, h, a, b, c, d, e, f, t + 2);
+            sha512_round!(f, g, h, a, b, c, d, e, t + 3);
+            sha512_round!(e, f, g, h, a, b, c, d, t + 4);
+            sha512_round!(d, e, f, g, h, a, b, c, t + 5);
+            sha512_round!(c, d, e, f, g, h, a, b, t + 6);
+            sha512_round!(b, c, d, e, f, g, h, a, t + 7);
+        }
+
+        for uint::range_step(64, 80, 8) |t| {
+            sha512_round!(a, b, c, d, e, f, g, h, t);
+            sha512_round!(h, a, b, c, d, e, f, g, t + 1);
+            sha512_round!(g, h, a, b, c, d, e, f, t + 2);
+            sha512_round!(f, g, h, a, b, c, d, e, t + 3);
+            sha512_round!(e, f, g, h, a, b, c, d, t + 4);
+            sha512_round!(d, e, f, g, h, a, b, c, t + 5);
+            sha512_round!(c, d, e, f, g, h, a, b, t + 6);
+            sha512_round!(b, c, d, e, f, g, h, a, t + 7);
+        }
+
+        self.H0 += a;
+        self.H1 += b;
+        self.H2 += c;
+        self.H3 += d;
+        self.H4 += e;
+        self.H5 += f;
+        self.H6 += g;
+        self.H7 += h;
+    }
+}
+
 
 // BitCounter is a specialized structure intended simply for counting the
 // number of bits that have been processed by the SHA-2 512 family of functions.
@@ -86,120 +230,12 @@ impl BitCounter {
     }
 }
 
-// A structure that represents that state of a digest computation
-// for the SHA-2 512 family of digest functions
-struct Engine512State {
-    H0: u64,
-    H1: u64,
-    H2: u64,
-    H3: u64,
-    H4: u64,
-    H5: u64,
-    H6: u64,
-    H7: u64,
-}
-
 struct Engine512 {
     bit_counter: BitCounter,
     buffer: [u8, ..128],
     buffer_idx: uint,
     state: Engine512State,
     finished: bool,
-}
-
-#[cfg(new)]
-fn process_block(state: &mut Engine512State, data: &[u8]) {
-
-    fn ch(x: u64, y: u64, z: u64) -> u64 {
-        ((x & y) ^ ((!x) & z))
-    }
-
-    fn maj(x: u64, y: u64, z: u64) -> u64 {
-        ((x & y) ^ (x & z) ^ (y & z))
-    }
-
-    fn sum0(x: u64) -> u64 {
-        ((x << 36) | (x >> 28)) ^ ((x << 30) | (x >> 34)) ^ ((x << 25) | (x >> 39))
-    }
-
-    fn sum1(x: u64) -> u64 {
-        ((x << 50) | (x >> 14)) ^ ((x << 46) | (x >> 18)) ^ ((x << 23) | (x >> 41))
-    }
-
-    fn sigma0(x: u64) -> u64 {
-        ((x << 63) | (x >> 1)) ^ ((x << 56) | (x >> 8)) ^ (x >> 7)
-    }
-
-    fn sigma1(x: u64) -> u64 {
-        ((x << 45) | (x >> 19)) ^ ((x << 3) | (x >> 61)) ^ (x >> 6)
-    }
-
-    macro_rules! schedule512_round( ($t:expr) => (
-            W[$t] = sigma1(W[$t - 2]) + W[$t - 7] + sigma0(W[$t - 15]) + W[$t - 16];
-        )
-    )
-
-    macro_rules! sha512_round( ($A:ident, $B:ident, $C:ident, $D:ident, $E:ident, $F:ident, $G:ident, $H:ident, $t:expr) => (
-            {
-                $H += sum1($E) + ch($E, $F, $G) + K64[$t] + W[$t];
-                $D += $H;
-                $H += sum0($A) + maj($A, $B, $C);
-            }
-        )
-    )
-
-    let mut W = [0u64, ..80];
-
-    let mut a = state.H0;
-    let mut b = state.H1;
-    let mut c = state.H2;
-    let mut d = state.H3;
-    let mut e = state.H4;
-    let mut f = state.H5;
-    let mut g = state.H6;
-    let mut h = state.H7;
-
-    readu64v(W.mut_slice(0, 16), data);
-
-    for uint::range_step(0, 64, 8) |t| {
-        schedule512_round!(t + 16);
-        schedule512_round!(t + 17);
-        schedule512_round!(t + 18);
-        schedule512_round!(t + 19);
-        schedule512_round!(t + 20);
-        schedule512_round!(t + 21);
-        schedule512_round!(t + 22);
-        schedule512_round!(t + 23);
-
-        sha512_round!(a, b, c, d, e, f, g, h, t);
-        sha512_round!(h, a, b, c, d, e, f, g, t + 1);
-        sha512_round!(g, h, a, b, c, d, e, f, t + 2);
-        sha512_round!(f, g, h, a, b, c, d, e, t + 3);
-        sha512_round!(e, f, g, h, a, b, c, d, t + 4);
-        sha512_round!(d, e, f, g, h, a, b, c, t + 5);
-        sha512_round!(c, d, e, f, g, h, a, b, t + 6);
-        sha512_round!(b, c, d, e, f, g, h, a, t + 7);
-    }
-
-    for uint::range_step(64, 80, 8) |t| {
-        sha512_round!(a, b, c, d, e, f, g, h, t);
-        sha512_round!(h, a, b, c, d, e, f, g, t + 1);
-        sha512_round!(g, h, a, b, c, d, e, f, t + 2);
-        sha512_round!(f, g, h, a, b, c, d, e, t + 3);
-        sha512_round!(e, f, g, h, a, b, c, d, t + 4);
-        sha512_round!(d, e, f, g, h, a, b, c, t + 5);
-        sha512_round!(c, d, e, f, g, h, a, b, t + 6);
-        sha512_round!(b, c, d, e, f, g, h, a, t + 7);
-    }
-
-    state.H0 += a;
-    state.H1 += b;
-    state.H2 += c;
-    state.H3 += d;
-    state.H4 += e;
-    state.H5 += f;
-    state.H6 += g;
-    state.H7 += h;
 }
 
 impl Engine512 {
@@ -216,7 +252,7 @@ impl Engine512 {
                 self.bit_counter.add_bytes(buffer_remaining);
                 cpy(self.buffer.mut_slice(self.buffer_idx, 128), in.slice(0, buffer_remaining));
                 self.buffer_idx = 0;
-                process_block(&mut self.state, self.buffer);
+                self.state.process_block(self.buffer);
                 i += buffer_remaining;
             } else {
                 self.bit_counter.add_bytes(in.len());
@@ -230,7 +266,7 @@ impl Engine512 {
         // into the buffer
         while in.len() - i >= 128 {
             self.bit_counter.add_bytes(128);
-            process_block(&mut self.state, in.slice(i, i + 128));
+            self.state.process_block(in.slice(i, i + 128));
             i += 128;
         }
 
@@ -274,12 +310,12 @@ impl Engine512 {
             zero(self.buffer.mut_slice(self.buffer_idx, 112));
         } else {
             zero(self.buffer.mut_slice(self.buffer_idx, 128));
-            process_block(&mut self.state, self.buffer);
+            self.state.process_block(self.buffer);
             zero(self.buffer.mut_slice(0, 112));
         }
         writeu64(self.buffer.mut_slice(112, 120), high_bit_count);
         writeu64(self.buffer.mut_slice(120, 128), low_bit_count);
-        process_block(&mut self.state, self.buffer);
+        self.state.process_block(self.buffer);
 
         self.finished = true;
     }
@@ -300,30 +336,30 @@ impl Engine512 {
     fn result_384(&mut self, out: &mut [u8]) {
         self.finish();
 
-//         from_u64(self.state.H0, out.mut_slice(0, 8));
-//         from_u64(self.state.H1, out.mut_slice(8, 16));
-//         from_u64(self.state.H2, out.mut_slice(16, 24));
-//         from_u64(self.state.H3, out.mut_slice(24, 32));
-//         from_u64(self.state.H4, out.mut_slice(32, 40));
-//         from_u64(self.state.H5, out.mut_slice(40, 48));
+        writeu64(out.mut_slice(0, 8), self.state.H0);
+        writeu64(out.mut_slice(8, 16), self.state.H1);
+        writeu64(out.mut_slice(16, 24), self.state.H2);
+        writeu64(out.mut_slice(24, 32), self.state.H3);
+        writeu64(out.mut_slice(32, 40), self.state.H4);
+        writeu64(out.mut_slice(40, 48), self.state.H5);
     }
 
     fn result_256(&mut self, out: &mut [u8]) {
         self.finish();
 
-//         from_u64(self.state.H0, out.mut_slice(0, 8));
-//         from_u64(self.state.H1, out.mut_slice(8, 16));
-//         from_u64(self.state.H2, out.mut_slice(16, 24));
-//         from_u64(self.state.H3, out.mut_slice(24, 32));
+        writeu64(out.mut_slice(0, 8), self.state.H0);
+        writeu64(out.mut_slice(8, 16), self.state.H1);
+        writeu64(out.mut_slice(16, 24), self.state.H2);
+        writeu64(out.mut_slice(24, 32), self.state.H3);
     }
 
     fn result_224(&mut self, out: &mut [u8]) {
         self.finish();
 
-//         from_u64(self.state.H0, out.mut_slice(0, 8));
-//         from_u64(self.state.H1, out.mut_slice(8, 16));
-//         from_u64(self.state.H2, out.mut_slice(16, 24));
-//         from_u32((self.state.H3 >> 32) as u32, out.mut_slice(24, 28));
+        writeu64(out.mut_slice(0, 8), self.state.H0);
+        writeu64(out.mut_slice(8, 16), self.state.H1);
+        writeu64(out.mut_slice(16, 24), self.state.H2);
+        writeu32(out.mut_slice(24, 28), (self.state.H3 >> 32) as u32);
     }
 }
 
@@ -954,39 +990,13 @@ mod tests {
         output_str: ~str,
     }
 
-    fn rdtsc() -> u64 {
-        let mut lo = 0u64;
-        let mut hi = 0u64;
-        unsafe {
-            asm!(
-                "
-                xor %rax, %rax
-                xor %rdx, %rdx
-                rdtsc
-                mov %rax, $0
-                mov %rdx, $1
-                "
-                : "=r" (lo), "=r" (hi)
-                :
-                : "rax", "rdx"
-                : "volatile")
-        }
-        return (lo as u64) | ((hi as u64) << 32);
-    }
-
     fn test_hash<D: Digest>(sh: &mut D, tests: &[Test]) {
         // Test that it works when accepting the message all at once
         for tests.iter().advance() |t| {
 
-            let begin = rdtsc();
-
             sh.input_str(t.input);
 
             let out_str = sh.result_str();
-
-            let end = rdtsc();
-
-            printfln!("total cycles: %?", (end - begin));
 
             assert!(out_str == t.output_str);
 
@@ -1177,70 +1187,4 @@ mod tests {
             sh.result(result);
         }
     }
-}
-
-fn rdtsc() -> u64 {
-    let mut lo = 0u64;
-    let mut hi = 0u64;
-    unsafe {
-        asm!(
-            "
-            xor %rax, %rax
-            xor %rdx, %rdx
-            rdtsc
-            mov %rax, $0
-            mov %rdx, $1
-            "
-            : "=r" (lo), "=r" (hi)
-            :
-            : "rax", "rdx"
-            : "volatile")
-    }
-    return (lo as u64) | ((hi as u64) << 32);
-}
-
-#[main]
-fn main() {
-    use digest::{Digest, DigestUtil};
-
-    let data = [0u8, ..128];
-    let mut state = Engine512State {
-        H0: 0x6a09e667f3bcc908u64,
-        H1: 0xbb67ae8584caa73bu64,
-        H2: 0x3c6ef372fe94f82bu64,
-        H3: 0xa54ff53a5f1d36f1u64,
-        H4: 0x510e527fade682d1u64,
-        H5: 0x9b05688c2b3e6c1fu64,
-        H6: 0x1f83d9abfb41bd6bu64,
-        H7: 0x5be0cd19137e2179u64,
-    };
-
-    let input = ~"The quick brown fox jumps over the lazy dog";
-    let mut result = [0u8, ..64];
-    let mut sh = ~Sha512::new();
-//     let mut sh = ~Sha512Trunc224::new();
-
-    let count = 100000;
-    let mut cycles = 0u64;
-    let mut i = 0;
-
-    // warmup
-    while i < count {
-        i += 1;
-        process_block(&mut state, data);
-    }
-
-    i = 0;
-    while i < count {
-        i += 1;
-        let start = rdtsc();
-        sh.reset();
-        (*sh).input_str(input);
-        sh.result(result);
-//         process_block(&mut state, data);
-        let end = rdtsc();
-        cycles += end - start;
-    }
-
-    printfln!("Cycles / exec: %?", cycles / count);
 }

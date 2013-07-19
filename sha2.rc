@@ -1,7 +1,7 @@
 
 #[link(name = "sha2", vers = "1.0", author = "DaGenix")];
 
-// #[crate_type = "lib"];
+#[crate_type = "lib"];
 
 extern mod extra;
 
