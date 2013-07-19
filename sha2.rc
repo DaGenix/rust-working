@@ -3,5 +3,7 @@
 
 #[crate_type = "lib"];
 
+extern mod extra;
+
 pub mod sha2;
 pub mod digest;

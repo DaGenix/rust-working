@@ -144,6 +144,102 @@ impl Engine512 {
         }
     }
 
+    #[cfg(new)]
+    fn process_block(&mut self) {
+
+        fn ch(x: u64, y: u64, z: u64) -> u64 {
+            ((x & y) ^ ((!x) & z))
+        }
+
+        fn maj(x: u64, y: u64, z: u64) -> u64 {
+            ((x & y) ^ (x & z) ^ (y & z))
+        }
+
+        fn sum0(x: u64) -> u64 {
+            ((x << 36) | (x >> 28)) ^ ((x << 30) | (x >> 34)) ^ ((x << 25) | (x >> 39))
+        }
+
+        fn sum1(x: u64) -> u64 {
+            ((x << 50) | (x >> 14)) ^ ((x << 46) | (x >> 18)) ^ ((x << 23) | (x >> 41))
+        }
+
+        fn sigma0(x: u64) -> u64 {
+            ((x << 63) | (x >> 1)) ^ ((x << 56) | (x >> 8)) ^ (x >> 7)
+        }
+
+        fn sigma1(x: u64) -> u64 {
+            ((x << 45) | (x >> 19)) ^ ((x << 3) | (x >> 61)) ^ (x >> 6)
+        }
+
+        macro_rules! schedule512_round( ($t:expr) => (
+                self.W[$t] = sigma1(self.W[$t - 2]) + self.W[$t - 7] + sigma0(self.W[$t - 15]) +
+                    self.W[$t - 16];
+            )
+        )
+
+        macro_rules! sha512_round( ( $A:ident, $B:ident, $C:ident, $D:ident, $E:ident, $F:ident, $G:ident, $H:ident, $t:expr ) => (
+                {
+                    $H += sum1($E) + ch($E, $F, $G) + K64[$t] + self.W[$t];
+                    $D += $H;
+                    $H += sum0($A) + maj($A, $B, $C);
+                }
+            )
+        )
+
+        let mut a = self.H0;
+        let mut b = self.H1;
+        let mut c = self.H2;
+        let mut d = self.H3;
+        let mut e = self.H4;
+        let mut f = self.H5;
+        let mut g = self.H6;
+        let mut h = self.H7;
+
+        for uint::range_step(0, 64, 8) |t| {
+            schedule512_round!(t + 16);
+            schedule512_round!(t + 17);
+            sha512_round!(a, b, c, d, e, f, g, h, t);
+            sha512_round!(h, a, b, c, d, e, f, g, t + 1);
+
+            schedule512_round!(t + 18);
+            schedule512_round!(t + 19);
+            sha512_round!(g, h, a, b, c, d, e, f, t + 2);
+            sha512_round!(f, g, h, a, b, c, d, e, t + 3);
+
+            schedule512_round!(t + 20);
+            schedule512_round!(t + 21);
+            sha512_round!(e, f, g, h, a, b, c, d, t + 4);
+            sha512_round!(d, e, f, g, h, a, b, c, t + 5);
+
+            schedule512_round!(t + 22);
+            schedule512_round!(t + 23);
+            sha512_round!(c, d, e, f, g, h, a, b, t + 6);
+            sha512_round!(b, c, d, e, f, g, h, a, t + 7);
+        }
+
+        for uint::range_step(64, 80, 8) |t| {
+            sha512_round!(a, b, c, d, e, f, g, h, t);
+            sha512_round!(h, a, b, c, d, e, f, g, t + 1);
+            sha512_round!(g, h, a, b, c, d, e, f, t + 2);
+            sha512_round!(f, g, h, a, b, c, d, e, t + 3);
+            sha512_round!(e, f, g, h, a, b, c, d, t + 4);
+            sha512_round!(d, e, f, g, h, a, b, c, t + 5);
+            sha512_round!(c, d, e, f, g, h, a, b, t + 6);
+            sha512_round!(b, c, d, e, f, g, h, a, t + 7);
+        }
+
+        self.H0 += a;
+        self.H1 += b;
+        self.H2 += c;
+        self.H3 += d;
+        self.H4 += e;
+        self.H5 += f;
+        self.H6 += g;
+        self.H7 += h;
+
+    }
+
+    #[cfg(old)]
     fn process_block(&mut self) {
         fn ch(x: u64, y: u64, z: u64) -> u64 {
             ((x & y) ^ ((!x) & z))
@@ -929,6 +1025,8 @@ impl Digest for Sha224 {
 
 #[cfg(test)]
 mod tests {
+    use extra::test::BenchHarness;
+
     use digest::{Digest, DigestUtil};
     use sha2::{Sha512, Sha384, Sha512Trunc256, Sha512Trunc224, Sha256, Sha224};
 
@@ -937,12 +1035,40 @@ mod tests {
         output_str: ~str,
     }
 
+    fn rdtsc() -> u64 {
+        let mut lo = 0u64;
+        let mut hi = 0u64;
+        unsafe {
+            asm!(
+                "
+                xor %rax, %rax
+                xor %rdx, %rdx
+                rdtsc
+                mov %rax, $0
+                mov %rdx, $1
+                "
+                : "=r" (lo), "=r" (hi)
+                :
+                : "rax", "rdx"
+                : "volatile")
+        }
+        return (lo as u64) | ((hi as u64) << 32);
+    }
+
     fn test_hash<D: Digest>(sh: &mut D, tests: &[Test]) {
         // Test that it works when accepting the message all at once
         for tests.iter().advance() |t| {
+
+            let begin = rdtsc();
+
             sh.input_str(t.input);
 
             let out_str = sh.result_str();
+
+            let end = rdtsc();
+
+            printfln!("total cycles: %?", (end - begin));
+
             assert!(out_str == t.output_str);
 
             sh.reset();
@@ -1119,5 +1245,17 @@ mod tests {
         let mut sh = ~Sha224::new();
 
         test_hash(sh, tests);
+    }
+
+    #[bench]
+    fn bench_sha512(b: &mut BenchHarness) {
+        let input = ~"The quick brown fox jumps over the lazy dog";
+        let mut result = [0u8, ..64];
+        let mut sh = ~Sha512::new();
+        do b.iter {
+            sh.reset();
+            (*sh).input_str(input);
+            sh.result(result);
+        }
     }
 }
