@@ -96,6 +96,9 @@ pub fn read_u32v_le(dst: &mut[u32], in: &[u8]) {
 }
 
 
+/// A FixedBuffer implements a buffer with a fixed size. When the buffer becomes full, it must be
+/// processed. Any operation that modifies the buffer or provides a slice to be modified by the
+/// caller, also consumes those bytes.
 pub trait FixedBuffer {
     /// Input a buffer a bytes. If the buffer becomes full, proccess it with the provided
     /// function and then clear the buffer.
@@ -104,15 +107,16 @@ pub trait FixedBuffer {
     /// Reset the buffer.
     fn reset(&mut self);
 
-    /// Zero the buffer up until the specified index. The buffer position currently must be less
-    /// than that index.
+    /// Zero the buffer up until the specified index. The buffer position currently must not be
+    /// greater than that index.
     fn zero_until(&mut self, idx: uint);
 
     /// Get a slice of the buffer of the specified size. There must be at least that many bytes
     /// remaining in the buffer.
     fn next<'s>(&'s mut self, len: uint) -> &'s mut [u8];
 
-    /// Get the current buffer. The buffer must already be full.
+    /// Get the current buffer. The buffer must already be full. This implicitly clears the buffer
+    /// as well.
     fn full_buffer<'s>(&'s mut self) -> &'s [u8];
 
     /// Get the current position of the buffer.
@@ -235,8 +239,8 @@ impl FixedBuffer128 {
 impl_fixed_buffer!(FixedBuffer128, 128)
 
 
-/// The StandardPadding trait adds a function usefull for various hash algorithms to a FixedBuffer
-/// object.
+/// The StandardPadding trait adds a function useful for various hash algorithms to a FixedBuffer
+/// struct.
 pub trait StandardPadding {
     /// Add standard padding to the buffer. The buffer must not be full when this function is called
     /// and is guaranteed to have exactly rem remaining bytes when it is done.
