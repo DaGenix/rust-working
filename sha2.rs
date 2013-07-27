@@ -10,8 +10,8 @@
 
 use std::uint;
 
-use cryptoutil::{write_u64_be, write_u32_be, read_u64v_be, read_u32v_be, FixedBuffer128,
-    FixedBuffer64};
+use cryptoutil::{write_u64_be, write_u32_be, read_u64v_be, read_u32v_be, FixedBuffer,
+    FixedBuffer128, FixedBuffer64, StandardPadding};
 use digest::Digest;
 
 
@@ -257,19 +257,7 @@ impl Engine512 {
             return;
         }
 
-        // Add byte with high order bit set - this must be the first byte at the end of the data.
-        // The buffer always has at least one byte available, since input() always processes the
-        // buffer when it gets full.
-        self.buffer.next(1)[0] = 128;
-
-        // If we have space for the bit counts in the current block, we can put them there,
-        // otherwise, we need to fill the current block with 0s, process it, and then put the
-        // bit count at the end of the next block and then process it.
-        if self.buffer.remaining() < 16 {
-            self.buffer.zero_until(128);
-            self.state.process_block(self.buffer.full_buffer());
-        }
-        self.buffer.zero_until(112);
+        self.buffer.standard_padding(16, |in: &[u8]| { self.state.process_block(in) });
         write_u64_be(self.buffer.next(8), self.bit_counter.get_high_bit_count());
         write_u64_be(self.buffer.next(8), self.bit_counter.get_low_bit_count());
         self.state.process_block(self.buffer.full_buffer());
@@ -646,19 +634,7 @@ impl Engine256 {
             return;
         }
 
-        // Add byte with high order bit set - this must be the first byte at the end of the data
-        // The buffer always has at least one byte available, since input() always processes the
-        // buffer when it gets full.
-        self.buffer.next(1)[0] = 128;
-
-        // If we have space for the bit counts in the current block, we can put them there,
-        // otherwise, we need to fill the current block with 0s, process it, and then put the
-        // bit count at the end of the next block and then process it.
-        if self.buffer.remaining() < 8 {
-            self.buffer.zero_until(64);
-            self.state.process_block(self.buffer.full_buffer());
-        }
-        self.buffer.zero_until(56);
+        self.buffer.standard_padding(8, |in: &[u8]| { self.state.process_block(in) });
         write_u32_be(self.buffer.next(4), (self.length >> 29) as u32 );
         write_u32_be(self.buffer.next(4), (self.length << 3) as u32);
         self.state.process_block(self.buffer.full_buffer());
