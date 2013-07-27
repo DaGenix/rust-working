@@ -5,6 +5,7 @@
 
 extern mod extra;
 
+mod cryptoutil;
+
 pub mod sha2;
 pub mod digest;
-
