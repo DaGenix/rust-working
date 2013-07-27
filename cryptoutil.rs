@@ -12,7 +12,7 @@ use std::uint;
 
 
 // Copy all of src into dst. The vectors must be of equal size.
-pub fn copy_byte_vec(dst: &mut [u8], src: &[u8]) {
+pub fn copy_u8_vec(dst: &mut [u8], src: &[u8]) {
     use std::ptr::copy_memory;
     assert!(dst.len() == src.len());
     unsafe {
@@ -21,7 +21,7 @@ pub fn copy_byte_vec(dst: &mut [u8], src: &[u8]) {
 }
 
 // Zero out the vector
-pub fn zero_byte_vec(dst: &mut [u8]) {
+pub fn zero_u8_vec(dst: &mut [u8]) {
     use std::ptr::zero_memory;
     unsafe {
         zero_memory(dst.unsafe_mut_ref(0), dst.len());
@@ -30,7 +30,7 @@ pub fn zero_byte_vec(dst: &mut [u8]) {
 
 // Write a u64 into the vector, which must be 8 bytes long. The value
 // is written in big-endian form.
-pub fn writeu64be(dst: &mut[u8], in: u64) {
+pub fn write_u64_be(dst: &mut[u8], in: u64) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_be64;
     assert!(dst.len() == 8);
@@ -42,7 +42,7 @@ pub fn writeu64be(dst: &mut[u8], in: u64) {
 
 // Write a u32 into the vector, which must be 4 bytes long. The value
 // is written in big-endian form.
-pub fn writeu32be(dst: &mut[u8], in: u32) {
+pub fn write_u32_be(dst: &mut[u8], in: u32) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_be32;
     assert!(dst.len() == 4);
@@ -54,7 +54,7 @@ pub fn writeu32be(dst: &mut[u8], in: u32) {
 
 // Read a vector of bytes into a vector of u64s. The values are read as
 // if they are in big-endian format.
-pub fn readu64vbe(dst: &mut[u64], in: &[u8]) {
+pub fn read_u64v_be(dst: &mut[u64], in: &[u8]) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_be64;
     assert!(dst.len() * 8 == in.len());
@@ -71,7 +71,7 @@ pub fn readu64vbe(dst: &mut[u64], in: &[u8]) {
 
 // Read a vector of bytes into a vector of u32s. The values are read as
 // if they are in big-endian format.
-pub fn readu32vbe(dst: &mut[u32], in: &[u8]) {
+pub fn read_u32v_be(dst: &mut[u32], in: &[u8]) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_be32;
     assert!(dst.len() * 4 == in.len());
@@ -107,13 +107,13 @@ macro_rules! impl_fixed_buffer( ($name:ident, $size:expr) => (
             if self.buffer_idx != 0 {
                 let buffer_remaining = size - self.buffer_idx;
                 if in.len() >= buffer_remaining {
-                        copy_byte_vec(self.buffer.mut_slice(self.buffer_idx, size),
+                        copy_u8_vec(self.buffer.mut_slice(self.buffer_idx, size),
                             in.slice(0, buffer_remaining));
                     self.buffer_idx = 0;
                     func(self.buffer);
                     i += buffer_remaining;
                 } else {
-                    copy_byte_vec(self.buffer.mut_slice(self.buffer_idx, self.buffer_idx + in.len()), in);
+                    copy_u8_vec(self.buffer.mut_slice(self.buffer_idx, self.buffer_idx + in.len()), in);
                     self.buffer_idx += in.len();
                     return;
                 }
@@ -129,7 +129,7 @@ macro_rules! impl_fixed_buffer( ($name:ident, $size:expr) => (
             // Copy any input data (which must be less than a full block) into the buffer (which
             // is currently empty)
             let in_remaining = in.len() - i;
-            copy_byte_vec(self.buffer.mut_slice(0, in_remaining), in.slice(i, in.len()));
+            copy_u8_vec(self.buffer.mut_slice(0, in_remaining), in.slice(i, in.len()));
             self.buffer_idx += in_remaining;
         }
 
@@ -139,7 +139,7 @@ macro_rules! impl_fixed_buffer( ($name:ident, $size:expr) => (
 
         pub fn zero_until(&mut self, idx: uint) {
             assert!(idx >= self.buffer_idx);
-            zero_byte_vec(self.buffer.mut_slice(self.buffer_idx, idx));
+            zero_u8_vec(self.buffer.mut_slice(self.buffer_idx, idx));
             self.buffer_idx = idx;
         }
 
