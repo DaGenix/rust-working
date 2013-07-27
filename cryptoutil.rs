@@ -151,7 +151,7 @@ macro_rules! impl_fixed_buffer( ($name:ident, $size:expr) => (
             return self.buffer.mut_slice(self.buffer_idx - len, self.buffer_idx);
         }
 
-        pub fn buffer<'s>(&'s mut self) -> &'s [u8] {
+        pub fn full_buffer<'s>(&'s mut self) -> &'s [u8] {
             assert!(self.buffer_idx == $size);
             self.buffer_idx = 0;
             return self.buffer.slice(0, $size);
