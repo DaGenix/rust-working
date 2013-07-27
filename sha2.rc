@@ -8,4 +8,5 @@ extern mod extra;
 mod cryptoutil;
 
 pub mod sha2;
+pub mod md5;
 pub mod digest;
