@@ -13,16 +13,16 @@ use digest::Digest;
 
 
 // A structure that represents that state of a digest computation for the MD5 function
-struct EngineState {
+struct Md5State {
     H0: u32,
     H1: u32,
     H2: u32,
     H3: u32
 }
 
-impl EngineState {
-    fn new() -> EngineState {
-        return EngineState {
+impl Md5State {
+    fn new() -> Md5State {
+        return Md5State {
             H0: 0x67452301,
             H1: 0xefcdab89,
             H2: 0x98badcfe,
@@ -167,23 +167,33 @@ impl EngineState {
 }
 
 
-// A structure that keeps track of the state of the MD5 operation and contains the logic
-// necessary to perform the final calculations.
-struct Engine {
-    length: u64,
-    buffer: FixedBuffer64,
-    state: EngineState,
-    finished: bool,
+/// The MD5 Digest algorithm
+struct Md5 {
+    priv length: u64,
+    priv buffer: FixedBuffer64,
+    priv state: Md5State,
+    priv finished: bool,
 }
 
-impl Engine {
-    fn new() -> Engine {
-        return Engine {
+impl Md5 {
+    /**
+     * Construct a new instance of a MD5 digest.
+     */
+    pub fn new() -> Md5 {
+        return Md5 {
             length: 0,
             buffer: FixedBuffer64::new(),
-            state: EngineState::new(),
+            state: Md5State::new(),
             finished: false
         }
+    }
+}
+
+impl Digest for Md5 {
+    fn input(&mut self, d: &[u8]) {
+        assert!(!self.finished)
+        self.length += d.len() as u64;
+        self.buffer.input(d, |in: &[u8]| { self.state.process_block(in) });
     }
 
     fn reset(&mut self) {
@@ -193,58 +203,19 @@ impl Engine {
         self.finished = false;
     }
 
-    fn input(&mut self, in: &[u8]) {
-        assert!(!self.finished)
-        self.length += in.len() as u64;
-        self.buffer.input(in, |in: &[u8]| { self.state.process_block(in) });
-    }
-
-    fn finish(&mut self) {
-        if self.finished {
-            return;
+    fn result(&mut self, out: &mut [u8]) {
+        if !self.finished {
+            self.buffer.standard_padding(8, |in: &[u8]| { self.state.process_block(in) });
+            write_u32_le(self.buffer.next(4), (self.length << 3) as u32);
+            write_u32_le(self.buffer.next(4), (self.length >> 29) as u32);
+            self.state.process_block(self.buffer.full_buffer());
+            self.finished = true;
         }
 
-        self.buffer.standard_padding(8, |in: &[u8]| { self.state.process_block(in) });
-        write_u32_le(self.buffer.next(4), (self.length << 3) as u32);
-        write_u32_le(self.buffer.next(4), (self.length >> 29) as u32);
-        self.state.process_block(self.buffer.full_buffer());
-
-        self.finished = true;
-    }
-}
-
-
-struct Md5 {
-    priv engine: Engine
-}
-
-impl Md5 {
-    /**
-     * Construct a new instance of a MD5 digest.
-     */
-    pub fn new() -> Md5 {
-        return Md5 {
-            engine: Engine::new()
-        };
-    }
-}
-
-impl Digest for Md5 {
-    fn input(&mut self, d: &[u8]) {
-        self.engine.input(d);
-    }
-
-    fn result(&mut self, out: &mut [u8]) {
-        self.engine.finish();
-
-        write_u32_le(out.mut_slice(0, 4), self.engine.state.H0);
-        write_u32_le(out.mut_slice(4, 8), self.engine.state.H1);
-        write_u32_le(out.mut_slice(8, 12), self.engine.state.H2);
-        write_u32_le(out.mut_slice(12, 16), self.engine.state.H3);
-    }
-
-    fn reset(&mut self) {
-        self.engine.reset();
+        write_u32_le(out.mut_slice(0, 4), self.state.H0);
+        write_u32_le(out.mut_slice(4, 8), self.state.H1);
+        write_u32_le(out.mut_slice(8, 12), self.state.H2);
+        write_u32_le(out.mut_slice(12, 16), self.state.H3);
     }
 
     fn output_bits(&self) -> uint { 128 }
@@ -318,8 +289,9 @@ mod tests {
 
 #[cfg(test)]
 mod bench {
-    use md5::Md5;
     use extra::test::BenchHarness;
+
+    use md5::Md5;
 
 
     #[bench]

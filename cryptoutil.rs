@@ -235,9 +235,11 @@ impl FixedBuffer128 {
 impl_fixed_buffer!(FixedBuffer128, 128)
 
 
+/// The StandardPadding trait adds a function usefull for various hash algorithms to a FixedBuffer
+/// object.
 pub trait StandardPadding {
-    /// Add standard padding to the buffer. The buffer must not be full when this function is
-    /// and is guaranteed to have exactly rem remaining bytes when its done.
+    /// Add standard padding to the buffer. The buffer must not be full when this function is called
+    /// and is guaranteed to have exactly rem remaining bytes when it is done.
     fn standard_padding(&mut self, rem: uint, func: &fn(&[u8]));
 }
 
