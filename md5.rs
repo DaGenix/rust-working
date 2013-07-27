@@ -38,10 +38,6 @@ impl Md5State {
     }
 
     fn process_block(&mut self, in: &[u8]) {
-        fn rotate_left(x: u32, n: u32) -> u32 {
-            return (x << n) | (x >> (32 - n));
-        }
-
         fn F(u: u32, v: u32, w: u32) -> u32 {
             return (u & v) | (!u & w);
         }
@@ -54,29 +50,17 @@ impl Md5State {
             return u ^ v ^ w;
         }
 
-        fn K(u: u32, v: u32, w: u32) -> u32 {
+        fn I(u: u32, v: u32, w: u32) -> u32 {
             return v ^ (u | !w);
         }
 
-        let S11 = 7u32;
-        let S12 = 12u32;
-        let S13 = 17u32;
-        let S14 = 22u32;
+        fn rotate_left(x: u32, n: u32) -> u32 {
+            return (x << n) | (x >> (32 - n));
+        }
 
-        let S21 = 5u32;
-        let S22 = 9u32;
-        let S23 = 14u32;
-        let S24 = 20u32;
-
-        let S31 = 4u32;
-        let S32 = 11u32;
-        let S33 = 16u32;
-        let S34 = 23u32;
-
-        let S41 = 6u32;
-        let S42 = 10u32;
-        let S43 = 15u32;
-        let S44 = 21u32;
+        fn round(w: u32, x: u32, y: u32, z: u32, m: u32, s: u32) -> u32 {
+            return rotate_left(w + F(x, y, z) + m, s) + x;
+        }
 
         let mut a = self.H0;
         let mut b = self.H1;
@@ -88,76 +72,76 @@ impl Md5State {
         read_u32v_le(data, in);
 
         // Round 1 - F cycle, 16 times.
-        a = rotate_left(a + F(b, c, d) + data[0] + 0xd76aa478, S11) + b;
-        d = rotate_left(d + F(a, b, c) + data[1] + 0xe8c7b756, S12) + a;
-        c = rotate_left(c + F(d, a, b) + data[2] + 0x242070db, S13) + d;
-        b = rotate_left(b + F(c, d, a) + data[3] + 0xc1bdceee, S14) + c;
-        a = rotate_left(a + F(b, c, d) + data[4] + 0xf57c0faf, S11) + b;
-        d = rotate_left(d + F(a, b, c) + data[5] + 0x4787c62a, S12) + a;
-        c = rotate_left(c + F(d, a, b) + data[6] + 0xa8304613, S13) + d;
-        b = rotate_left(b + F(c, d, a) + data[7] + 0xfd469501, S14) + c;
-        a = rotate_left(a + F(b, c, d) + data[8] + 0x698098d8, S11) + b;
-        d = rotate_left(d + F(a, b, c) + data[9] + 0x8b44f7af, S12) + a;
-        c = rotate_left(c + F(d, a, b) + data[10] + 0xffff5bb1, S13) + d;
-        b = rotate_left(b + F(c, d, a) + data[11] + 0x895cd7be, S14) + c;
-        a = rotate_left(a + F(b, c, d) + data[12] + 0x6b901122, S11) + b;
-        d = rotate_left(d + F(a, b, c) + data[13] + 0xfd987193, S12) + a;
-        c = rotate_left(c + F(d, a, b) + data[14] + 0xa679438e, S13) + d;
-        b = rotate_left(b + F(c, d, a) + data[15] + 0x49b40821, S14) + c;
+        a = round(a, b, c, d, data[0] + 0xd76aa478, 7);
+        d = round(d, a, b, c, data[1] + 0xe8c7b756, 12);
+        c = round(c, d, a, b, data[2] + 0x242070db, 17);
+        b = round(b, c, d, a, data[3] + 0xc1bdceee, 22);
+        a = round(a, b, c, d, data[4] + 0xf57c0faf, 7);
+        d = round(d, a, b, c, data[5] + 0x4787c62a, 12);
+        c = round(c, d, a, b, data[6] + 0xa8304613, 17);
+        b = round(b, c, d, a, data[7] + 0xfd469501, 22);
+        a = round(a, b, c, d, data[8] + 0x698098d8, 7);
+        d = round(d, a, b, c, data[9] + 0x8b44f7af, 12);
+        c = round(c, d, a, b, data[10] + 0xffff5bb1, 17);
+        b = round(b, c, d, a, data[11] + 0x895cd7be, 22);
+        a = round(a, b, c, d, data[12] + 0x6b901122, 7);
+        d = round(d, a, b, c, data[13] + 0xfd987193, 12);
+        c = round(c, d, a, b, data[14] + 0xa679438e, 17);
+        b = round(b, c, d, a, data[15] + 0x49b40821, 22);
 
         // Round 2 - G cycle, 16 times.
-        a = rotate_left(a + G(b, c, d) + data[1] + 0xf61e2562, S21) + b;
-        d = rotate_left(d + G(a, b, c) + data[6] + 0xc040b340, S22) + a;
-        c = rotate_left(c + G(d, a, b) + data[11] + 0x265e5a51, S23) + d;
-        b = rotate_left(b + G(c, d, a) + data[0] + 0xe9b6c7aa, S24) + c;
-        a = rotate_left(a + G(b, c, d) + data[5] + 0xd62f105d, S21) + b;
-        d = rotate_left(d + G(a, b, c) + data[10] + 0x02441453, S22) + a;
-        c = rotate_left(c + G(d, a, b) + data[15] + 0xd8a1e681, S23) + d;
-        b = rotate_left(b + G(c, d, a) + data[4] + 0xe7d3fbc8, S24) + c;
-        a = rotate_left(a + G(b, c, d) + data[9] + 0x21e1cde6, S21) + b;
-        d = rotate_left(d + G(a, b, c) + data[14] + 0xc33707d6, S22) + a;
-        c = rotate_left(c + G(d, a, b) + data[3] + 0xf4d50d87, S23) + d;
-        b = rotate_left(b + G(c, d, a) + data[8] + 0x455a14ed, S24) + c;
-        a = rotate_left(a + G(b, c, d) + data[13] + 0xa9e3e905, S21) + b;
-        d = rotate_left(d + G(a, b, c) + data[2] + 0xfcefa3f8, S22) + a;
-        c = rotate_left(c + G(d, a, b) + data[7] + 0x676f02d9, S23) + d;
-        b = rotate_left(b + G(c, d, a) + data[12] + 0x8d2a4c8a, S24) + c;
+        a = rotate_left(a + G(b, c, d) + data[1] + 0xf61e2562, 5) + b;
+        d = rotate_left(d + G(a, b, c) + data[6] + 0xc040b340, 9) + a;
+        c = rotate_left(c + G(d, a, b) + data[11] + 0x265e5a51, 14) + d;
+        b = rotate_left(b + G(c, d, a) + data[0] + 0xe9b6c7aa, 20) + c;
+        a = rotate_left(a + G(b, c, d) + data[5] + 0xd62f105d, 5) + b;
+        d = rotate_left(d + G(a, b, c) + data[10] + 0x02441453, 9) + a;
+        c = rotate_left(c + G(d, a, b) + data[15] + 0xd8a1e681, 14) + d;
+        b = rotate_left(b + G(c, d, a) + data[4] + 0xe7d3fbc8, 20) + c;
+        a = rotate_left(a + G(b, c, d) + data[9] + 0x21e1cde6, 5) + b;
+        d = rotate_left(d + G(a, b, c) + data[14] + 0xc33707d6, 9) + a;
+        c = rotate_left(c + G(d, a, b) + data[3] + 0xf4d50d87, 14) + d;
+        b = rotate_left(b + G(c, d, a) + data[8] + 0x455a14ed, 20) + c;
+        a = rotate_left(a + G(b, c, d) + data[13] + 0xa9e3e905, 5) + b;
+        d = rotate_left(d + G(a, b, c) + data[2] + 0xfcefa3f8, 9) + a;
+        c = rotate_left(c + G(d, a, b) + data[7] + 0x676f02d9, 14) + d;
+        b = rotate_left(b + G(c, d, a) + data[12] + 0x8d2a4c8a, 20) + c;
 
         // Round 3 - H cycle, 16 times.
-        a = rotate_left(a + H(b, c, d) + data[5] + 0xfffa3942, S31) + b;
-        d = rotate_left(d + H(a, b, c) + data[8] + 0x8771f681, S32) + a;
-        c = rotate_left(c + H(d, a, b) + data[11] + 0x6d9d6122, S33) + d;
-        b = rotate_left(b + H(c, d, a) + data[14] + 0xfde5380c, S34) + c;
-        a = rotate_left(a + H(b, c, d) + data[1] + 0xa4beea44, S31) + b;
-        d = rotate_left(d + H(a, b, c) + data[4] + 0x4bdecfa9, S32) + a;
-        c = rotate_left(c + H(d, a, b) + data[7] + 0xf6bb4b60, S33) + d;
-        b = rotate_left(b + H(c, d, a) + data[10] + 0xbebfbc70, S34) + c;
-        a = rotate_left(a + H(b, c, d) + data[13] + 0x289b7ec6, S31) + b;
-        d = rotate_left(d + H(a, b, c) + data[0] + 0xeaa127fa, S32) + a;
-        c = rotate_left(c + H(d, a, b) + data[3] + 0xd4ef3085, S33) + d;
-        b = rotate_left(b + H(c, d, a) + data[6] + 0x04881d05, S34) + c;
-        a = rotate_left(a + H(b, c, d) + data[9] + 0xd9d4d039, S31) + b;
-        d = rotate_left(d + H(a, b, c) + data[12] + 0xe6db99e5, S32) + a;
-        c = rotate_left(c + H(d, a, b) + data[15] + 0x1fa27cf8, S33) + d;
-        b = rotate_left(b + H(c, d, a) + data[2] + 0xc4ac5665, S34) + c;
+        a = rotate_left(a + H(b, c, d) + data[5] + 0xfffa3942, 4) + b;
+        d = rotate_left(d + H(a, b, c) + data[8] + 0x8771f681, 11) + a;
+        c = rotate_left(c + H(d, a, b) + data[11] + 0x6d9d6122, 16) + d;
+        b = rotate_left(b + H(c, d, a) + data[14] + 0xfde5380c, 23) + c;
+        a = rotate_left(a + H(b, c, d) + data[1] + 0xa4beea44, 4) + b;
+        d = rotate_left(d + H(a, b, c) + data[4] + 0x4bdecfa9, 11) + a;
+        c = rotate_left(c + H(d, a, b) + data[7] + 0xf6bb4b60, 16) + d;
+        b = rotate_left(b + H(c, d, a) + data[10] + 0xbebfbc70, 23) + c;
+        a = rotate_left(a + H(b, c, d) + data[13] + 0x289b7ec6, 4) + b;
+        d = rotate_left(d + H(a, b, c) + data[0] + 0xeaa127fa, 11) + a;
+        c = rotate_left(c + H(d, a, b) + data[3] + 0xd4ef3085, 16) + d;
+        b = rotate_left(b + H(c, d, a) + data[6] + 0x04881d05, 23) + c;
+        a = rotate_left(a + H(b, c, d) + data[9] + 0xd9d4d039, 4) + b;
+        d = rotate_left(d + H(a, b, c) + data[12] + 0xe6db99e5, 11) + a;
+        c = rotate_left(c + H(d, a, b) + data[15] + 0x1fa27cf8, 16) + d;
+        b = rotate_left(b + H(c, d, a) + data[2] + 0xc4ac5665, 23) + c;
 
         // Round 4 - K cycle, 16 times.
-        a = rotate_left(a + K(b, c, d) + data[0] + 0xf4292244, S41) + b;
-        d = rotate_left(d + K(a, b, c) + data[7] + 0x432aff97, S42) + a;
-        c = rotate_left(c + K(d, a, b) + data[14] + 0xab9423a7, S43) + d;
-        b = rotate_left(b + K(c, d, a) + data[5] + 0xfc93a039, S44) + c;
-        a = rotate_left(a + K(b, c, d) + data[12] + 0x655b59c3, S41) + b;
-        d = rotate_left(d + K(a, b, c) + data[3] + 0x8f0ccc92, S42) + a;
-        c = rotate_left(c + K(d, a, b) + data[10] + 0xffeff47d, S43) + d;
-        b = rotate_left(b + K(c, d, a) + data[1] + 0x85845dd1, S44) + c;
-        a = rotate_left(a + K(b, c, d) + data[8] + 0x6fa87e4f, S41) + b;
-        d = rotate_left(d + K(a, b, c) + data[15] + 0xfe2ce6e0, S42) + a;
-        c = rotate_left(c + K(d, a, b) + data[6] + 0xa3014314, S43) + d;
-        b = rotate_left(b + K(c, d, a) + data[13] + 0x4e0811a1, S44) + c;
-        a = rotate_left(a + K(b, c, d) + data[4] + 0xf7537e82, S41) + b;
-        d = rotate_left(d + K(a, b, c) + data[11] + 0xbd3af235, S42) + a;
-        c = rotate_left(c + K(d, a, b) + data[2] + 0x2ad7d2bb, S43) + d;
-        b = rotate_left(b + K(c, d, a) + data[9] + 0xeb86d391, S44) + c;
+        a = rotate_left(a + I(b, c, d) + data[0] + 0xf4292244, 6) + b;
+        d = rotate_left(d + I(a, b, c) + data[7] + 0x432aff97, 10) + a;
+        c = rotate_left(c + I(d, a, b) + data[14] + 0xab9423a7, 15) + d;
+        b = rotate_left(b + I(c, d, a) + data[5] + 0xfc93a039, 21) + c;
+        a = rotate_left(a + I(b, c, d) + data[12] + 0x655b59c3, 6) + b;
+        d = rotate_left(d + I(a, b, c) + data[3] + 0x8f0ccc92, 10) + a;
+        c = rotate_left(c + I(d, a, b) + data[10] + 0xffeff47d, 15) + d;
+        b = rotate_left(b + I(c, d, a) + data[1] + 0x85845dd1, 21) + c;
+        a = rotate_left(a + I(b, c, d) + data[8] + 0x6fa87e4f, 6) + b;
+        d = rotate_left(d + I(a, b, c) + data[15] + 0xfe2ce6e0, 10) + a;
+        c = rotate_left(c + I(d, a, b) + data[6] + 0xa3014314, 15) + d;
+        b = rotate_left(b + I(c, d, a) + data[13] + 0x4e0811a1, 21) + c;
+        a = rotate_left(a + I(b, c, d) + data[4] + 0xf7537e82, 6) + b;
+        d = rotate_left(d + I(a, b, c) + data[11] + 0xbd3af235, 10) + a;
+        c = rotate_left(c + I(d, a, b) + data[2] + 0x2ad7d2bb, 15) + d;
+        b = rotate_left(b + I(c, d, a) + data[9] + 0xeb86d391, 21) + c;
 
         self.H0 += a;
         self.H1 += b;
