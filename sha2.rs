@@ -10,81 +10,40 @@
 
 use std::uint;
 
+use cryptoutil::*;
 use digest::Digest;
 
 
-// Copy all of src into dst. The vectors must be of equal size.
-fn cpy(dst: &mut [u8], src: &[u8]) {
-    use std::ptr::copy_memory;
-    assert!(dst.len() == src.len());
-    unsafe {
-        copy_memory(dst.unsafe_mut_ref(0), src.unsafe_ref(0), dst.len());
-    }
+// BitCounter is a specialized structure intended simply for counting the
+// number of bits that have been processed by the SHA-2 512 family of functions.
+// It does very little overflow checking since such checking is not necessary
+// for how it is used. A more generic structure would have to do this checking.
+// So, don't copy this structure and use it elsewhere!
+struct BitCounter {
+    high_bit_count: u64,
+    low_byte_count: u64
 }
 
-// Zero out the vector
-fn zero(dst: &mut [u8]) {
-    use std::ptr::zero_memory;
-    unsafe {
-        zero_memory(dst.unsafe_mut_ref(0), dst.len());
-    }
-}
-
-// Write a u64 into the vector, which must be 8 bytes long. The value
-// is written in big-endian form.
-fn writeu64(dst: &mut[u8], in: u64) {
-    use std::cast::transmute;
-    use std::unstable::intrinsics::to_be64;
-    assert!(dst.len() == 8);
-    unsafe {
-        let x: *mut i64 = transmute(dst.unsafe_mut_ref(0));
-        *x = to_be64(in as i64);
-    }
-}
-
-// Write a u32 into the vector, which must be 4 bytes long. The value
-// is written in big-endian form.
-fn writeu32(dst: &mut[u8], in: u32) {
-    use std::cast::transmute;
-    use std::unstable::intrinsics::to_be32;
-    assert!(dst.len() == 4);
-    unsafe {
-        let x: *mut i32 = transmute(dst.unsafe_mut_ref(0));
-        *x = to_be32(in as i32);
-    }
-}
-
-// Read a vector of bytes into a vector of u64s. The values are read as
-// if they are in big-endian format.
-fn readu64v(dst: &mut[u64], in: &[u8]) {
-    use std::cast::transmute;
-    use std::unstable::intrinsics::to_be64;
-    assert!(dst.len() * 8 == in.len());
-    unsafe {
-        let mut x: *mut i64 = transmute(dst.unsafe_mut_ref(0));
-        let mut y: *i64 = transmute(in.unsafe_ref(0));
-        for uint::range(0, dst.len()) |_| {
-            *x = to_be64(*y);
-            x = x.offset(1);
-            y = y.offset(1);
+impl BitCounter {
+    fn add_bytes(&mut self, bytes: uint) {
+        self.low_byte_count += bytes as u64;
+        if(self.low_byte_count > 0x1fffffffffffffffu64) {
+            self.high_bit_count += (self.low_byte_count >> 61);
+            self.low_byte_count &= 0x1fffffffffffffffu64;
         }
     }
-}
 
-// Read a vector of bytes into a vector of u32s. The values are read as
-// if they are in big-endian format.
-fn readu32v(dst: &mut[u32], in: &[u8]) {
-    use std::cast::transmute;
-    use std::unstable::intrinsics::to_be32;
-    assert!(dst.len() * 4 == in.len());
-    unsafe {
-        let mut x: *mut i32 = transmute(dst.unsafe_mut_ref(0));
-        let mut y: *i32 = transmute(in.unsafe_ref(0));
-        for uint::range(0, dst.len()) |_| {
-            *x = to_be32(*y);
-            x = x.offset(1);
-            y = y.offset(1);
-        }
+    fn reset(&mut self) {
+        self.low_byte_count = 0;
+        self.high_bit_count = 0;
+    }
+
+    fn get_low_bit_count(&self) -> u64 {
+        self.low_byte_count << 3
+    }
+
+    fn get_high_bit_count(&self) -> u64 {
+        self.high_bit_count
     }
 }
 
@@ -202,44 +161,9 @@ impl Engine512State {
 }
 
 
-// BitCounter is a specialized structure intended simply for counting the
-// number of bits that have been processed by the SHA-2 512 family of functions.
-// It does very little overflow checking since such checking is not necessary
-// for how it is used. A more generic structure would have to do this checking.
-// So, don't copy this structure and use it elsewhere!
-struct BitCounter {
-    high_bit_count: u64,
-    low_byte_count: u64
-}
-
-impl BitCounter {
-    fn add_bytes(&mut self, bytes: uint) {
-        self.low_byte_count += bytes as u64;
-        if(self.low_byte_count > 0x1fffffffffffffffu64) {
-            self.high_bit_count += (self.low_byte_count >> 61);
-            self.low_byte_count &= 0x1fffffffffffffffu64;
-        }
-    }
-
-    fn reset(&mut self) {
-        self.low_byte_count = 0;
-        self.high_bit_count = 0;
-    }
-
-    fn get_low_bit_count(&self) -> u64 {
-        self.low_byte_count << 3
-    }
-
-    fn get_high_bit_count(&self) -> u64 {
-        self.high_bit_count
-    }
-}
-
-
 struct Engine512 {
     bit_counter: BitCounter,
-    buffer: [u8, ..128],
-    buffer_idx: uint,
+    buffer: FixedBuffer128,
     state: Engine512State,
     finished: bool,
 }
@@ -247,46 +171,13 @@ struct Engine512 {
 impl Engine512 {
     fn input_vec(&mut self, in: &[u8]) {
         assert!(!self.finished)
-
-        let mut i = 0;
-
-        // If there is already data in the buffer, copy as much as we can into that buffer and
-        // process the buffer if it becomes full
-        if self.buffer_idx != 0 {
-            let buffer_remaining = 128 - self.buffer_idx;
-            if in.len() >= buffer_remaining {
-                self.bit_counter.add_bytes(buffer_remaining);
-                cpy(self.buffer.mut_slice(self.buffer_idx, 128), in.slice(0, buffer_remaining));
-                self.buffer_idx = 0;
-                self.state.process_block(self.buffer);
-                i += buffer_remaining;
-            } else {
-                self.bit_counter.add_bytes(in.len());
-                cpy(self.buffer.mut_slice(self.buffer_idx, self.buffer_idx + in.len()), in);
-                self.buffer_idx += in.len();
-                return;
-            }
-        }
-
-        // While we have at least a full block's worth of data, process that data without copying it
-        // into the buffer
-        while in.len() - i >= 128 {
-            self.bit_counter.add_bytes(128);
-            self.state.process_block(in.slice(i, i + 128));
-            i += 128;
-        }
-
-        // Copy any input data (which must be less than a full block) into the buffer (which is
-        // currently empty)
-        let in_remaining = in.len() - i;
-        self.bit_counter.add_bytes(in_remaining);
-        cpy(self.buffer.mut_slice(0, in_remaining), in.slice(i, in.len()));
-        self.buffer_idx += in_remaining;
+        self.bit_counter.add_bytes(in.len());
+        self.buffer.input(in, |in: &[u8]| { self.state.process_block(in) });
     }
 
     fn reset(&mut self) {
         self.bit_counter.reset();
-        self.buffer_idx = 0;
+        self.buffer.reset();
         self.finished = false;
     }
 
@@ -300,66 +191,23 @@ impl Engine512 {
         let low_bit_count = self.bit_counter.get_low_bit_count();
 
         // add byte with high order bit set - this must be the first byte at the end of the data
-        self.buffer[self.buffer_idx] = 128;
-        self.buffer_idx += 1;
+        self.buffer.next(1)[0] = 128;
 
         // if we have space for the bit counts in the current block, we can put them there,
         // otherwise, we need to fill the current block with 0s, process it, and then put the
         // bit count at the end of the next block and then process it.
-        if self.buffer_idx <= 112 {
-            zero(self.buffer.mut_slice(self.buffer_idx, 112));
+        if self.buffer.position() <= 112 {
+            self.buffer.zero_until(112);
         } else {
-            zero(self.buffer.mut_slice(self.buffer_idx, 128));
-            self.state.process_block(self.buffer);
-            zero(self.buffer.mut_slice(0, 112));
+            self.buffer.zero_until(128);
+            self.state.process_block(self.buffer.buffer());
+            self.buffer.zero_until(112);
         }
-        writeu64(self.buffer.mut_slice(112, 120), high_bit_count);
-        writeu64(self.buffer.mut_slice(120, 128), low_bit_count);
-        self.state.process_block(self.buffer);
+        writeu64(self.buffer.next(8), high_bit_count);
+        writeu64(self.buffer.next(8), low_bit_count);
+        self.state.process_block(self.buffer.buffer());
 
         self.finished = true;
-    }
-
-    fn result_512(&mut self, out: &mut [u8]) {
-        self.finish();
-
-        writeu64(out.mut_slice(0, 8), self.state.H0);
-        writeu64(out.mut_slice(8, 16), self.state.H1);
-        writeu64(out.mut_slice(16, 24), self.state.H2);
-        writeu64(out.mut_slice(24, 32), self.state.H3);
-        writeu64(out.mut_slice(32, 40), self.state.H4);
-        writeu64(out.mut_slice(40, 48), self.state.H5);
-        writeu64(out.mut_slice(48, 56), self.state.H6);
-        writeu64(out.mut_slice(56, 64), self.state.H7);
-    }
-
-    fn result_384(&mut self, out: &mut [u8]) {
-        self.finish();
-
-        writeu64(out.mut_slice(0, 8), self.state.H0);
-        writeu64(out.mut_slice(8, 16), self.state.H1);
-        writeu64(out.mut_slice(16, 24), self.state.H2);
-        writeu64(out.mut_slice(24, 32), self.state.H3);
-        writeu64(out.mut_slice(32, 40), self.state.H4);
-        writeu64(out.mut_slice(40, 48), self.state.H5);
-    }
-
-    fn result_256(&mut self, out: &mut [u8]) {
-        self.finish();
-
-        writeu64(out.mut_slice(0, 8), self.state.H0);
-        writeu64(out.mut_slice(8, 16), self.state.H1);
-        writeu64(out.mut_slice(16, 24), self.state.H2);
-        writeu64(out.mut_slice(24, 32), self.state.H3);
-    }
-
-    fn result_224(&mut self, out: &mut [u8]) {
-        self.finish();
-
-        writeu64(out.mut_slice(0, 8), self.state.H0);
-        writeu64(out.mut_slice(8, 16), self.state.H1);
-        writeu64(out.mut_slice(16, 24), self.state.H2);
-        writeu32(out.mut_slice(24, 28), (self.state.H3 >> 32) as u32);
     }
 }
 
@@ -679,8 +527,7 @@ impl Sha512 {
         Sha512 {
             engine: Engine512 {
                 bit_counter: BitCounter { high_bit_count: 0, low_byte_count: 0 },
-                buffer: [0u8, ..128],
-                buffer_idx: 0,
+                buffer: FixedBuffer128::new(),
                 state: Engine512State {
                     H0: 0x6a09e667f3bcc908u64,
                     H1: 0xbb67ae8584caa73bu64,
@@ -705,8 +552,7 @@ impl Sha384 {
         Sha384 {
             engine: Engine512 {
                 bit_counter: BitCounter { high_bit_count: 0, low_byte_count: 0 },
-                buffer: [0u8, ..128],
-                buffer_idx: 0,
+                buffer: FixedBuffer128::new(),
                 state: Engine512State {
                     H0: 0xcbbb9d5dc1059ed8u64,
                     H1: 0x629a292a367cd507u64,
@@ -731,8 +577,7 @@ impl Sha512Trunc256 {
         Sha512Trunc256 {
             engine: Engine512 {
                 bit_counter: BitCounter { high_bit_count: 0, low_byte_count: 0 },
-                buffer: [0u8, ..128],
-                buffer_idx: 0,
+                buffer: FixedBuffer128::new(),
                 state: Engine512State {
                     H0: 0x22312194fc2bf72cu64,
                     H1: 0x9f555fa3c84c64c2u64,
@@ -757,8 +602,7 @@ impl Sha512Trunc224 {
         Sha512Trunc224 {
             engine: Engine512 {
                 bit_counter: BitCounter { high_bit_count: 0, low_byte_count: 0 },
-                buffer: [0u8, ..128],
-                buffer_idx: 0,
+                buffer: FixedBuffer128::new(),
                 state: Engine512State {
                     H0: 0x8c3d37c819544da2u64,
                     H1: 0x73e1996689dcd4d6u64,
@@ -833,7 +677,16 @@ impl Digest for Sha512 {
     }
 
     fn result(&mut self, out: &mut [u8]) {
-        self.engine.result_512(out)
+        self.engine.finish();
+
+        writeu64(out.mut_slice(0, 8), self.engine.state.H0);
+        writeu64(out.mut_slice(8, 16), self.engine.state.H1);
+        writeu64(out.mut_slice(16, 24), self.engine.state.H2);
+        writeu64(out.mut_slice(24, 32), self.engine.state.H3);
+        writeu64(out.mut_slice(32, 40), self.engine.state.H4);
+        writeu64(out.mut_slice(40, 48), self.engine.state.H5);
+        writeu64(out.mut_slice(48, 56), self.engine.state.H6);
+        writeu64(out.mut_slice(56, 64), self.engine.state.H7);
     }
 
     fn reset(&mut self) {
@@ -858,7 +711,14 @@ impl Digest for Sha384 {
     }
 
     fn result(&mut self, out: &mut [u8]) {
-        self.engine.result_384(out)
+        self.engine.finish();
+
+        writeu64(out.mut_slice(0, 8), self.engine.state.H0);
+        writeu64(out.mut_slice(8, 16), self.engine.state.H1);
+        writeu64(out.mut_slice(16, 24), self.engine.state.H2);
+        writeu64(out.mut_slice(24, 32), self.engine.state.H3);
+        writeu64(out.mut_slice(32, 40), self.engine.state.H4);
+        writeu64(out.mut_slice(40, 48), self.engine.state.H5);
     }
 
     fn reset(&mut self) {
@@ -883,7 +743,12 @@ impl Digest for Sha512Trunc256 {
     }
 
     fn result(&mut self, out: &mut [u8]) {
-        self.engine.result_256(out)
+        self.engine.finish();
+
+        writeu64(out.mut_slice(0, 8), self.engine.state.H0);
+        writeu64(out.mut_slice(8, 16), self.engine.state.H1);
+        writeu64(out.mut_slice(16, 24), self.engine.state.H2);
+        writeu64(out.mut_slice(24, 32), self.engine.state.H3);
     }
 
     fn reset(&mut self) {
@@ -908,7 +773,12 @@ impl Digest for Sha512Trunc224 {
     }
 
     fn result(&mut self, out: &mut [u8]) {
-        self.engine.result_224(out)
+        self.engine.finish();
+
+        writeu64(out.mut_slice(0, 8), self.engine.state.H0);
+        writeu64(out.mut_slice(8, 16), self.engine.state.H1);
+        writeu64(out.mut_slice(16, 24), self.engine.state.H2);
+        writeu32(out.mut_slice(24, 28), (self.engine.state.H3 >> 32) as u32);
     }
 
     fn reset(&mut self) {
