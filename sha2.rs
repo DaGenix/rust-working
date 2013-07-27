@@ -15,12 +15,14 @@ use cryptoutil::{write_u64_be, write_u32_be, read_u64v_be, read_u32v_be, FixedBu
 use digest::Digest;
 
 
+// Sha-512 and Sha-256 use basically the same calculations which are implemented by these macros.
+// Inlining the calculations seems to result in better generated code.
 macro_rules! schedule_round( ($t:expr) => (
         W[$t] = sigma1(W[$t - 2]) + W[$t - 7] + sigma0(W[$t - 15]) + W[$t - 16];
     )
 )
 
-macro_rules! sha_round(
+macro_rules! sha2_round(
     ($A:ident, $B:ident, $C:ident, $D:ident,
      $E:ident, $F:ident, $G:ident, $H:ident, $K:ident, $t:expr) => (
         {
@@ -73,8 +75,8 @@ impl BitCounter {
 }
 
 
-// A structure that represents that state of a digest computation
-// for the SHA-2 512 family of digest functions
+// A structure that represents that state of a digest computation for the SHA-2 512 family of digest
+// functions
 struct Engine512State {
     H0: u64,
     H1: u64,
@@ -161,25 +163,25 @@ impl Engine512State {
             schedule_round!(t + 22);
             schedule_round!(t + 23);
 
-            sha_round!(a, b, c, d, e, f, g, h, K64, t);
-            sha_round!(h, a, b, c, d, e, f, g, K64, t + 1);
-            sha_round!(g, h, a, b, c, d, e, f, K64, t + 2);
-            sha_round!(f, g, h, a, b, c, d, e, K64, t + 3);
-            sha_round!(e, f, g, h, a, b, c, d, K64, t + 4);
-            sha_round!(d, e, f, g, h, a, b, c, K64, t + 5);
-            sha_round!(c, d, e, f, g, h, a, b, K64, t + 6);
-            sha_round!(b, c, d, e, f, g, h, a, K64, t + 7);
+            sha2_round!(a, b, c, d, e, f, g, h, K64, t);
+            sha2_round!(h, a, b, c, d, e, f, g, K64, t + 1);
+            sha2_round!(g, h, a, b, c, d, e, f, K64, t + 2);
+            sha2_round!(f, g, h, a, b, c, d, e, K64, t + 3);
+            sha2_round!(e, f, g, h, a, b, c, d, K64, t + 4);
+            sha2_round!(d, e, f, g, h, a, b, c, K64, t + 5);
+            sha2_round!(c, d, e, f, g, h, a, b, K64, t + 6);
+            sha2_round!(b, c, d, e, f, g, h, a, K64, t + 7);
         }
 
         for uint::range_step(64, 80, 8) |t| {
-            sha_round!(a, b, c, d, e, f, g, h, K64, t);
-            sha_round!(h, a, b, c, d, e, f, g, K64, t + 1);
-            sha_round!(g, h, a, b, c, d, e, f, K64, t + 2);
-            sha_round!(f, g, h, a, b, c, d, e, K64, t + 3);
-            sha_round!(e, f, g, h, a, b, c, d, K64, t + 4);
-            sha_round!(d, e, f, g, h, a, b, c, K64, t + 5);
-            sha_round!(c, d, e, f, g, h, a, b, K64, t + 6);
-            sha_round!(b, c, d, e, f, g, h, a, K64, t + 7);
+            sha2_round!(a, b, c, d, e, f, g, h, K64, t);
+            sha2_round!(h, a, b, c, d, e, f, g, K64, t + 1);
+            sha2_round!(g, h, a, b, c, d, e, f, K64, t + 2);
+            sha2_round!(f, g, h, a, b, c, d, e, K64, t + 3);
+            sha2_round!(e, f, g, h, a, b, c, d, K64, t + 4);
+            sha2_round!(d, e, f, g, h, a, b, c, K64, t + 5);
+            sha2_round!(c, d, e, f, g, h, a, b, K64, t + 6);
+            sha2_round!(b, c, d, e, f, g, h, a, K64, t + 7);
         }
 
         self.H0 += a;
@@ -218,6 +220,8 @@ static K64: [u64, ..80] = [
 ];
 
 
+// A structure that keeps track of the state of the Sha-512 operation and contains the logic
+// necessary to perform the final calculations.
 struct Engine512 {
     bit_counter: BitCounter,
     buffer: FixedBuffer128,
@@ -254,7 +258,7 @@ impl Engine512 {
         }
 
         // Add byte with high order bit set - this must be the first byte at the end of the data.
-        // The buffer always has at least one byte availabe, since input() always processes the
+        // The buffer always has at least one byte available, since input() always processes the
         // buffer when it gets full.
         self.buffer.next(1)[0] = 128;
 
@@ -473,6 +477,8 @@ static H512_TRUNC_224: [u64, ..8] = [
 ];
 
 
+// A structure that represents that state of a digest computation for the SHA-2 512 family of digest
+// functions
 struct Engine256State {
     H0: u32,
     H1: u32,
@@ -559,25 +565,25 @@ impl Engine256State {
             schedule_round!(t + 22);
             schedule_round!(t + 23);
 
-            sha_round!(a, b, c, d, e, f, g, h, K32, t);
-            sha_round!(h, a, b, c, d, e, f, g, K32, t + 1);
-            sha_round!(g, h, a, b, c, d, e, f, K32, t + 2);
-            sha_round!(f, g, h, a, b, c, d, e, K32, t + 3);
-            sha_round!(e, f, g, h, a, b, c, d, K32, t + 4);
-            sha_round!(d, e, f, g, h, a, b, c, K32, t + 5);
-            sha_round!(c, d, e, f, g, h, a, b, K32, t + 6);
-            sha_round!(b, c, d, e, f, g, h, a, K32, t + 7);
+            sha2_round!(a, b, c, d, e, f, g, h, K32, t);
+            sha2_round!(h, a, b, c, d, e, f, g, K32, t + 1);
+            sha2_round!(g, h, a, b, c, d, e, f, K32, t + 2);
+            sha2_round!(f, g, h, a, b, c, d, e, K32, t + 3);
+            sha2_round!(e, f, g, h, a, b, c, d, K32, t + 4);
+            sha2_round!(d, e, f, g, h, a, b, c, K32, t + 5);
+            sha2_round!(c, d, e, f, g, h, a, b, K32, t + 6);
+            sha2_round!(b, c, d, e, f, g, h, a, K32, t + 7);
         }
 
         for uint::range_step(48, 64, 8) |t| {
-            sha_round!(a, b, c, d, e, f, g, h, K32, t);
-            sha_round!(h, a, b, c, d, e, f, g, K32, t + 1);
-            sha_round!(g, h, a, b, c, d, e, f, K32, t + 2);
-            sha_round!(f, g, h, a, b, c, d, e, K32, t + 3);
-            sha_round!(e, f, g, h, a, b, c, d, K32, t + 4);
-            sha_round!(d, e, f, g, h, a, b, c, K32, t + 5);
-            sha_round!(c, d, e, f, g, h, a, b, K32, t + 6);
-            sha_round!(b, c, d, e, f, g, h, a, K32, t + 7);
+            sha2_round!(a, b, c, d, e, f, g, h, K32, t);
+            sha2_round!(h, a, b, c, d, e, f, g, K32, t + 1);
+            sha2_round!(g, h, a, b, c, d, e, f, K32, t + 2);
+            sha2_round!(f, g, h, a, b, c, d, e, K32, t + 3);
+            sha2_round!(e, f, g, h, a, b, c, d, K32, t + 4);
+            sha2_round!(d, e, f, g, h, a, b, c, K32, t + 5);
+            sha2_round!(c, d, e, f, g, h, a, b, K32, t + 6);
+            sha2_round!(b, c, d, e, f, g, h, a, K32, t + 7);
         }
 
         self.H0 += a;
@@ -603,8 +609,8 @@ static K32: [u32, ..64] = [
 ];
 
 
-// A structure that represents that state of a digest computation
-// for the SHA-2 256 family of digest functions
+// A structure that keeps track of the state of the Sha-256 operation and contains the logic
+// necessary to perform the final calculations.
 struct Engine256 {
     length: u64,
     buffer: FixedBuffer64,
@@ -641,7 +647,7 @@ impl Engine256 {
         }
 
         // Add byte with high order bit set - this must be the first byte at the end of the data
-        // The buffer always has at least one byte availabe, since input() always processes the
+        // The buffer always has at least one byte available, since input() always processes the
         // buffer when it gets full.
         self.buffer.next(1)[0] = 128;
 
