@@ -9,5 +9,6 @@ pub mod aesdangerous;
 pub mod aesni;
 
 pub mod symmetriccipher;
+mod blockmodes;
 
 pub mod util;

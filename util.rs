@@ -13,7 +13,7 @@ use std::num::Zero;
 use std::ops::BitOr;
 use std::uint;
 
-pub fn vec_to_array64(in: &[u8]) -> &[u8, ..8] {
+pub fn vec_to_array64<'s>(in: &'s [u8]) -> &'s [u8, ..8] {
     if(in.len() != 8) {
         fail!();
     }
@@ -23,7 +23,7 @@ pub fn vec_to_array64(in: &[u8]) -> &[u8, ..8] {
     }
 }
 
-pub fn vec_to_array128(in: &[u8]) -> &[u8, ..16] {
+pub fn vec_to_array128<'s>(in: &'s [u8]) -> &'s [u8, ..16] {
     if(in.len() != 16) {
         fail!();
     }
@@ -33,7 +33,7 @@ pub fn vec_to_array128(in: &[u8]) -> &[u8, ..16] {
     }
 }
 
-pub fn vec_to_array192(in: &[u8]) -> &[u8, ..24] {
+pub fn vec_to_array192<'s>(in: &'s [u8]) -> &'s [u8, ..24] {
     if(in.len() != 24) {
         fail!();
     }
@@ -43,7 +43,7 @@ pub fn vec_to_array192(in: &[u8]) -> &[u8, ..24] {
     }
 }
 
-pub fn vec_to_array256(in: &[u8]) -> &[u8, ..32] {
+pub fn vec_to_array256<'s>(in: &'s [u8]) -> &'s [u8, ..32] {
     if(in.len() != 32) {
         fail!();
     }
