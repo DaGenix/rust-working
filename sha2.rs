@@ -10,8 +10,8 @@
 
 use std::uint;
 
-use cryptoutil::{write_u64_be, write_u32_be, read_u64v_be, read_u32v_be, FixedBuffer,
-    FixedBuffer128, FixedBuffer64, StandardPadding};
+use cryptoutil::{write_u64_be, write_u32_be, read_u64v_be, read_u32v_be, shift_add_check_overflow,
+    shift_add_check_overflow_tuple, FixedBuffer, FixedBuffer128, FixedBuffer64, StandardPadding};
 use digest::Digest;
 
 
@@ -32,47 +32,6 @@ macro_rules! sha2_round(
         }
     )
 )
-
-
-// BitCounter is a specialized structure intended simply for counting the
-// number of bits that have been processed by the SHA-2 512 family of functions.
-// It does very little overflow checking since such checking is not necessary
-// for how it is used. A more generic structure would have to do this checking.
-// So, don't copy this structure and use it elsewhere!
-struct BitCounter {
-    high_bit_count: u64,
-    low_byte_count: u64
-}
-
-impl BitCounter {
-    fn new() -> BitCounter {
-        return BitCounter {
-            high_bit_count: 0,
-            low_byte_count: 0
-        };
-    }
-
-    fn add_bytes(&mut self, bytes: uint) {
-        self.low_byte_count += bytes as u64;
-        if(self.low_byte_count > 0x1fffffffffffffffu64) {
-            self.high_bit_count += (self.low_byte_count >> 61);
-            self.low_byte_count &= 0x1fffffffffffffffu64;
-        }
-    }
-
-    fn reset(&mut self) {
-        self.low_byte_count = 0;
-        self.high_bit_count = 0;
-    }
-
-    fn get_low_bit_count(&self) -> u64 {
-        self.low_byte_count << 3
-    }
-
-    fn get_high_bit_count(&self) -> u64 {
-        self.high_bit_count
-    }
-}
 
 
 // A structure that represents that state of a digest computation for the SHA-2 512 family of digest
@@ -223,7 +182,7 @@ static K64: [u64, ..80] = [
 // A structure that keeps track of the state of the Sha-512 operation and contains the logic
 // necessary to perform the final calculations.
 struct Engine512 {
-    bit_counter: BitCounter,
+    length_bits: (u64, u64),
     buffer: FixedBuffer128,
     state: Engine512State,
     finished: bool,
@@ -232,7 +191,7 @@ struct Engine512 {
 impl Engine512 {
     fn new(h: &[u64, ..8]) -> Engine512 {
         return Engine512 {
-            bit_counter: BitCounter::new(),
+            length_bits: (0, 0),
             buffer: FixedBuffer128::new(),
             state: Engine512State::new(h),
             finished: false
@@ -240,7 +199,7 @@ impl Engine512 {
     }
 
     fn reset(&mut self, h: &[u64, ..8]) {
-        self.bit_counter.reset();
+        self.length_bits = (0, 0);
         self.buffer.reset();
         self.state.reset(h);
         self.finished = false;
@@ -248,7 +207,8 @@ impl Engine512 {
 
     fn input(&mut self, in: &[u8]) {
         assert!(!self.finished)
-        self.bit_counter.add_bytes(in.len());
+        // Assumes that in.len() can be converted to u64 without overflow
+        self.length_bits = shift_add_check_overflow_tuple(self.length_bits, in.len() as u64, 3);
         self.buffer.input(in, |in: &[u8]| { self.state.process_block(in) });
     }
 
@@ -258,8 +218,12 @@ impl Engine512 {
         }
 
         self.buffer.standard_padding(16, |in: &[u8]| { self.state.process_block(in) });
-        write_u64_be(self.buffer.next(8), self.bit_counter.get_high_bit_count());
-        write_u64_be(self.buffer.next(8), self.bit_counter.get_low_bit_count());
+        match self.length_bits {
+            (hi, low) => {
+                write_u64_be(self.buffer.next(8), hi);
+                write_u64_be(self.buffer.next(8), low);
+            }
+        }
         self.state.process_block(self.buffer.full_buffer());
 
         self.finished = true;
@@ -586,21 +550,29 @@ impl Engine256State {
 }
 
 static K32: [u32, ..64] = [
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+    0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+    0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+    0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+    0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+    0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 ];
 
 
 // A structure that keeps track of the state of the Sha-256 operation and contains the logic
 // necessary to perform the final calculations.
 struct Engine256 {
-    length: u64,
+    length_bits: u64,
     buffer: FixedBuffer64,
     state: Engine256State,
     finished: bool,
@@ -609,7 +581,7 @@ struct Engine256 {
 impl Engine256 {
     fn new(h: &[u32, ..8]) -> Engine256 {
         return Engine256 {
-            length: 0,
+            length_bits: 0,
             buffer: FixedBuffer64::new(),
             state: Engine256State::new(h),
             finished: false
@@ -617,7 +589,7 @@ impl Engine256 {
     }
 
     fn reset(&mut self, h: &[u32, ..8]) {
-        self.length = 0;
+        self.length_bits = 0;
         self.buffer.reset();
         self.state.reset(h);
         self.finished = false;
@@ -625,7 +597,8 @@ impl Engine256 {
 
     fn input(&mut self, in: &[u8]) {
         assert!(!self.finished)
-        self.length += in.len() as u64;
+        // Assumes that in.len() can be converted to u64 without overflow
+        self.length_bits = shift_add_check_overflow(self.length_bits, in.len() as u64, 3);
         self.buffer.input(in, |in: &[u8]| { self.state.process_block(in) });
     }
 
@@ -635,8 +608,8 @@ impl Engine256 {
         }
 
         self.buffer.standard_padding(8, |in: &[u8]| { self.state.process_block(in) });
-        write_u32_be(self.buffer.next(4), (self.length >> 29) as u32 );
-        write_u32_be(self.buffer.next(4), (self.length << 3) as u32);
+        write_u32_be(self.buffer.next(4), (self.length_bits >> 32) as u32 );
+        write_u32_be(self.buffer.next(4), self.length_bits as u32);
         self.state.process_block(self.buffer.full_buffer());
 
         self.finished = true;
@@ -748,9 +721,8 @@ static H224: [u32, ..8] = [
 
 #[cfg(test)]
 mod tests {
-    use extra::test::BenchHarness;
-
-    use digest::{Digest, DigestUtil};
+    use cryptoutil::test::test_digest_1million_random;
+    use digest::Digest;
     use sha2::{Sha512, Sha384, Sha512Trunc256, Sha512Trunc224, Sha256, Sha224};
 
     struct Test {
@@ -761,11 +733,9 @@ mod tests {
     fn test_hash<D: Digest>(sh: &mut D, tests: &[Test]) {
         // Test that it works when accepting the message all at once
         for tests.iter().advance() |t| {
-
             sh.input_str(t.input);
 
             let out_str = sh.result_str();
-
             assert!(out_str == t.output_str);
 
             sh.reset();
@@ -944,15 +914,94 @@ mod tests {
         test_hash(sh, tests);
     }
 
-    #[bench]
-    fn bench_sha512(b: &mut BenchHarness) {
-        let input = ~"The quick brown fox jumps over the lazy dog";
-        let mut result = [0u8, ..64];
-        let mut sh = ~Sha512::new();
-        do b.iter {
-            sh.reset();
-            (*sh).input_str(input);
-            sh.result(result);
+    #[test]
+    fn test_1million_random_sha512() {
+        let mut sh = Sha512::new();
+        test_digest_1million_random(
+            &mut sh,
+            128,
+            "e718483d0ce769644e2e42c7bc15b4638e1f98b13b2044285632a803afa973eb" +
+            "de0ff244877ea60a4cb0432ce577c31beb009c5c2c49aa2e4eadb217ad8cc09b");
         }
+
+    #[test]
+    fn test_1million_random_sha256() {
+        let mut sh = Sha256::new();
+        test_digest_1million_random(
+            &mut sh,
+            64,
+            "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
     }
+}
+
+
+
+#[cfg(test)]
+mod bench {
+
+    use sha2::{Sha256,Sha512};
+    use test::BenchHarness;
+
+    #[bench]
+    pub fn sha256_10(bh: & mut BenchHarness) {
+        let mut sh = Sha256::new();
+        let bytes = [1u8, ..10];
+        do bh.iter {
+            sh.input(bytes);
+        }
+        bh.bytes = bytes.len() as u64;
+    }
+
+    #[bench]
+    pub fn sha256_1k(bh: & mut BenchHarness) {
+        let mut sh = Sha256::new();
+        let bytes = [1u8, ..1024];
+        do bh.iter {
+            sh.input(bytes);
+        }
+        bh.bytes = bytes.len() as u64;
+    }
+
+    #[bench]
+    pub fn sha256_64k(bh: & mut BenchHarness) {
+        let mut sh = Sha256::new();
+        let bytes = [1u8, ..65536];
+        do bh.iter {
+            sh.input(bytes);
+        }
+        bh.bytes = bytes.len() as u64;
+    }
+
+
+
+    #[bench]
+    pub fn sha512_10(bh: & mut BenchHarness) {
+        let mut sh = Sha512::new();
+        let bytes = [1u8, ..10];
+        do bh.iter {
+            sh.input(bytes);
+        }
+        bh.bytes = bytes.len() as u64;
+    }
+
+    #[bench]
+    pub fn sha512_1k(bh: & mut BenchHarness) {
+        let mut sh = Sha512::new();
+        let bytes = [1u8, ..1024];
+        do bh.iter {
+            sh.input(bytes);
+        }
+        bh.bytes = bytes.len() as u64;
+    }
+
+    #[bench]
+    pub fn sha512_64k(bh: & mut BenchHarness) {
+        let mut sh = Sha512::new();
+        let bytes = [1u8, ..65536];
+        do bh.iter {
+            sh.input(bytes);
+        }
+        bh.bytes = bytes.len() as u64;
+    }
+
 }
