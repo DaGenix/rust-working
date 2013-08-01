@@ -8,8 +8,22 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::num::One;
 use std::vec::bytes::{MutableByteVector, copy_memory};
 
+trait Slicer<'self, T> {
+    fn slice_to(&self, x: uint) -> &'self [T];
+    fn slice_from(&self, x: uint) -> &'self [T];
+}
+
+impl <'self, T> Slicer<'self, T> for &'self [T] {
+    fn slice_to(&self, x: uint) -> &'self [T] {
+        return self.slice(0, x);
+    }
+    fn slice_from(&self, x: uint) -> &'self [T] {
+        return self.slice(x, self.len());
+    }
+}
 
 /// Write a u64 into a vector, which must be 8 bytes long. The value is written in big-endian
 /// format.
@@ -96,11 +110,63 @@ pub fn read_u32v_le(dst: &mut[u32], in: &[u8]) {
 }
 
 
-/// A FixedBuffer implements a buffer with a fixed size. When the buffer becomes full, it must be
-/// processed. Any operation that modifies the buffer or provides a slice to be modified by the
-/// caller, also consumes those bytes.
+/// Returns true if adding the two parameters will result in integer overflow
+pub fn will_add_overflow<T: Int + Unsigned>(x: T, y: T) -> bool {
+    // This doesn't handle negative values! Don't copy this code elsewhere without considering if
+    // negative values are important to you!
+    let max: T = Bounded::max_value();
+    return x > max - y;
+}
+
+/// Shifts the second parameter and then adds it to the first. fails!() if there would be unsigned
+/// integer overflow.
+pub fn shift_add_check_overflow<T: Int + Unsigned + Clone>(x: T, mut y: T, shift: T) -> T {
+    if y.leading_zeros() < shift {
+        fail!("Could not add values - integer overflow.");
+    }
+    y = y << shift;
+
+    if will_add_overflow(x.clone(), y.clone()) {
+        fail!("Could not add values - integer overflow.");
+    }
+
+    return x + y;
+}
+
+/// Shifts the second parameter and then adds it to the first, which is a tuple where the first
+/// element is the high order value. fails!() if there would be unsigned integer overflow.
+pub fn shift_add_check_overflow_tuple
+        <T: Int + Unsigned + Clone>
+        (x: (T, T), mut y: T, shift: T) -> (T, T) {
+    if y.leading_zeros() < shift {
+        fail!("Could not add values - integer overflow.");
+    }
+    y = y << shift;
+
+    match x {
+        (hi, low) => {
+            let one: T = One::one();
+            if will_add_overflow(low.clone(), y.clone()) {
+                if will_add_overflow(hi.clone(), one.clone()) {
+                    fail!("Could not add values - integer overflow.");
+                } else {
+                    return (hi + one, low + y);
+                }
+            } else {
+                return (hi, low + y);
+            }
+        }
+    }
+}
+
+
+/// A FixedBuffer, likes its name implies, is a fixed size buffer. When the buffer becomes full, it
+/// must be processed. The input() method takes care of processing and then clearing the buffer
+/// automatically. However, other methods do not and require the caller to process the buffer. Any
+/// method that modifies the buffer directory or provides the caller with bytes that can be modifies
+/// results in those bytes being marked as used by the buffer.
 pub trait FixedBuffer {
-    /// Input a buffer a bytes. If the buffer becomes full, proccess it with the provided
+    /// Input a vector of bytes. If the buffer becomes full, proccess it with the provided
     /// function and then clear the buffer.
     fn input(&mut self, in: &[u8], func: &fn(&[u8]));
 
@@ -115,9 +181,11 @@ pub trait FixedBuffer {
     /// remaining in the buffer.
     fn next<'s>(&'s mut self, len: uint) -> &'s mut [u8];
 
-    /// Get the current buffer. The buffer must already be full. This implicitly clears the buffer
-    /// as well.
+    /// Get the current buffer. The buffer must already be full. This clears the buffer as well.
     fn full_buffer<'s>(&'s mut self) -> &'s [u8];
+
+    /// Get the current buffer whether or not its full. This clears the buffer as well.
+    fn current_buffer<'s>(&'s mut self) -> &'s [u8];
 
     /// Get the current position of the buffer.
     fn position(&self) -> uint;
@@ -134,11 +202,11 @@ macro_rules! impl_fixed_buffer( ($name:ident, $size:expr) => (
         fn input(&mut self, in: &[u8], func: &fn(&[u8])) {
             let mut i = 0;
 
-            // TODO - File a bug for this being necessary!
+            // FIXME: #6304 - This local variable shouldn't be necessary.
             let size = $size;
 
-            // If there is already data in the buffer, copy as much as we can into that buffer
-            // and process the buffer if it becomes full
+            // If there is already data in the buffer, copy as much as we can into it and process
+            // the data if the buffer becomes full.
             if self.buffer_idx != 0 {
                 let buffer_remaining = size - self.buffer_idx;
                 if in.len() >= buffer_remaining {
@@ -159,15 +227,16 @@ macro_rules! impl_fixed_buffer( ($name:ident, $size:expr) => (
                 }
             }
 
-            // While we have at least a full block's worth of data, process that data without
-            // copying it into the buffer
+            // While we have at least a full buffer size chunks's worth of data, process that data
+            // without copying it into the buffer
             while in.len() - i >= size {
                 func(in.slice(i, i + size));
                 i += size;
             }
 
-            // Copy any input data (which must be less than a full block) into the buffer (which
-            // is currently empty)
+            // Copy any input data into the buffer. At this point in the method, the ammount of
+            // data left in the input vector will be less than the buffer size and the buffer will
+            // be empty.
             let in_remaining = in.len() - i;
             copy_memory(
                 self.buffer.mut_slice(0, in_remaining),
@@ -197,6 +266,12 @@ macro_rules! impl_fixed_buffer( ($name:ident, $size:expr) => (
             return self.buffer.slice_to($size);
         }
 
+        fn current_buffer<'s>(&'s mut self) -> &'s [u8] {
+            let tmp = self.buffer_idx;
+            self.buffer_idx = 0;
+            return self.buffer.slice_to(tmp);
+        }
+
         fn position(&self) -> uint { self.buffer_idx }
 
         fn remaining(&self) -> uint { $size - self.buffer_idx }
@@ -206,11 +281,30 @@ macro_rules! impl_fixed_buffer( ($name:ident, $size:expr) => (
 ))
 
 
-/// A fixed size buffer of 128 bytes useful for cryptographic operations.
+/// A fixed size buffer of 16 bytes useful for cryptographic operations.
+pub struct FixedBuffer16 {
+    priv buffer: [u8, ..16],
+    priv buffer_idx: uint,
+}
+
+impl FixedBuffer16 {
+    /// Create a new buffer
+    pub fn new() -> FixedBuffer16 {
+        return FixedBuffer16 {
+            buffer: [0u8, ..16],
+            buffer_idx: 0
+        };
+    }
+}
+
+impl_fixed_buffer!(FixedBuffer16, 16)
+
+/// A fixed size buffer of 64 bytes useful for cryptographic operations.
 pub struct FixedBuffer64 {
     priv buffer: [u8, ..64],
     priv buffer_idx: uint,
 }
+
 impl FixedBuffer64 {
     /// Create a new buffer
     pub fn new() -> FixedBuffer64 {
@@ -220,13 +314,15 @@ impl FixedBuffer64 {
         };
     }
 }
+
 impl_fixed_buffer!(FixedBuffer64, 64)
 
-/// A fixed size buffer of 64 bytes useful for cryptographic operations.
+/// A fixed size buffer of 128 bytes useful for cryptographic operations.
 pub struct FixedBuffer128 {
     priv buffer: [u8, ..128],
     priv buffer_idx: uint,
 }
+
 impl FixedBuffer128 {
     /// Create a new buffer
     pub fn new() -> FixedBuffer128 {
@@ -236,31 +332,64 @@ impl FixedBuffer128 {
         };
     }
 }
+
 impl_fixed_buffer!(FixedBuffer128, 128)
 
 
-/// The StandardPadding trait adds a function useful for various hash algorithms to a FixedBuffer
+/// The StandardPadding trait adds a method useful for various hash algorithms to a FixedBuffer
 /// struct.
 pub trait StandardPadding {
-    /// Add standard padding to the buffer. The buffer must not be full when this function is called
-    /// and is guaranteed to have exactly rem remaining bytes when it is done.
+    /// Add standard padding to the buffer. The buffer must not be full when this method is called
+    /// and is guaranteed to have exactly rem remaining bytes when it returns. If there are not at
+    /// least rem bytes available, the buffer will be zero padded, processed, cleared, and then
+    /// filled with zeros again until only rem bytes are remaining.
     fn standard_padding(&mut self, rem: uint, func: &fn(&[u8]));
 }
 
-impl <T:FixedBuffer> StandardPadding for T {
+impl <T: FixedBuffer> StandardPadding for T {
     fn standard_padding(&mut self, rem: uint, func: &fn(&[u8])) {
         let size = self.size();
 
-        // Add byte with high order bit set - this must be the first byte at the end of the data.
         self.next(1)[0] = 128;
 
-        // If we have space for the bit counts in the current block, we can put them there,
-        // otherwise, we need to fill the current block with 0s, process it, and then put the
-        // bit count at the end of the next block and then process it.
         if self.remaining() < rem {
             self.zero_until(size);
             func(self.full_buffer());
         }
+
         self.zero_until(size - rem);
+    }
+}
+
+
+#[cfg(test)]
+mod test {
+    use std::rand::IsaacRng;
+    use std::rand::RngUtil;
+    use std::vec;
+
+    use digest::Digest;
+
+    /// Feed 1,000,000 'a's into the digest with varying input sizes and check that the result is
+    /// correct.
+    pub fn test_digest_1million_random<D: Digest>(digest: &mut D, blocksize: uint, expected: &str) {
+        let total_size = 1000000;
+        let buffer = vec::from_elem(blocksize * 2, 'a' as u8);
+        let mut rng = IsaacRng::new_unseeded();
+        let mut count = 0;
+
+        digest.reset();
+
+        while count < total_size {
+            let next: uint = rng.gen_uint_range(0, 2 * blocksize + 1);
+            let remaining = total_size - count;
+            let size = if next > remaining { remaining } else { next };
+            digest.input(buffer.slice_to(size));
+            count += size;
+        }
+
+        let result_str = digest.result_str();
+
+        assert!(expected == result_str);
     }
 }
