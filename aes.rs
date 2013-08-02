@@ -74,13 +74,13 @@ impl SymmetricCipher128 for Aes128Encryptor {
 }
 
 impl BlockEncryptor128 for Aes128Encryptor {
-    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
+    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
         match self.engine {
             AesNiEncryptionEngine128(ref engine) => {
-                return engine.encrypt_block(in);
+                return engine.encrypt_block(input);
             },
             AesSoftwareDangerousEncryptionEngine128(ref engine) => {
-                return engine.encrypt_block(in);
+                return engine.encrypt_block(input);
             }
         }
     }
@@ -121,13 +121,13 @@ impl SymmetricCipher128 for Aes128Decryptor {
 }
 
 impl BlockDecryptor128 for Aes128Decryptor {
-    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
+    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
         match self.engine {
             AesNiDecryptionEngine128(ref engine) => {
-                return engine.decrypt_block(in);
+                return engine.decrypt_block(input);
             },
             AesSoftwareDangerousDecryptionEngine128(ref engine) => {
-                return engine.decrypt_block(in);
+                return engine.decrypt_block(input);
             }
         }
     }
@@ -194,13 +194,13 @@ impl SymmetricCipher192 for Aes192Encryptor {
 }
 
 impl BlockEncryptor128 for Aes192Encryptor {
-    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
+    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
         match self.engine {
             AesNiEncryptionEngine192(ref engine) => {
-                return engine.encrypt_block(in);
+                return engine.encrypt_block(input);
             },
             AesSoftwareDangerousEncryptionEngine192(ref engine) => {
-                return engine.encrypt_block(in);
+                return engine.encrypt_block(input);
             }
         }
     }
@@ -241,13 +241,13 @@ impl SymmetricCipher192 for Aes192Decryptor {
 }
 
 impl BlockDecryptor128 for Aes192Decryptor {
-    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
+    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
         match self.engine {
             AesNiDecryptionEngine192(ref engine) => {
-                return engine.decrypt_block(in);
+                return engine.decrypt_block(input);
             },
             AesSoftwareDangerousDecryptionEngine192(ref engine) => {
-                return engine.decrypt_block(in);
+                return engine.decrypt_block(input);
             }
         }
     }
@@ -314,13 +314,13 @@ impl SymmetricCipher256 for Aes256Encryptor {
 }
 
 impl BlockEncryptor128 for Aes256Encryptor {
-    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
+    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
         match self.engine {
             AesNiEncryptionEngine256(ref engine) => {
-                return engine.encrypt_block(in);
+                return engine.encrypt_block(input);
             },
             AesSoftwareDangerousEncryptionEngine256(ref engine) => {
-                return engine.encrypt_block(in);
+                return engine.encrypt_block(input);
             }
         }
     }
@@ -361,13 +361,13 @@ impl SymmetricCipher256 for Aes256Decryptor {
 }
 
 impl BlockDecryptor128 for Aes256Decryptor {
-    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
+    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
         match self.engine {
             AesNiDecryptionEngine256(ref engine) => {
-                return engine.decrypt_block(in);
+                return engine.decrypt_block(input);
             },
             AesSoftwareDangerousDecryptionEngine256(ref engine) => {
-                return engine.decrypt_block(in);
+                return engine.decrypt_block(input);
             }
         }
     }

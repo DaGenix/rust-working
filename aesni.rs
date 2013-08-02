@@ -41,8 +41,8 @@ impl AesNi128Decryptor {
 }
 
 impl BlockEncryptor128 for AesNi128Encryptor {
-    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
-        return encrypt_block_aseni(10, in, self.kw);
+    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
+        return encrypt_block_aseni(10, input, self.kw);
     }
 }
 
@@ -53,8 +53,8 @@ impl SymmetricCipher128 for AesNi128Encryptor {
 }
 
 impl BlockDecryptor128 for AesNi128Decryptor {
-    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
-        return decrypt_block_aseni(10, in, self.kw);
+    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
+        return decrypt_block_aseni(10, input, self.kw);
     }
 }
 
@@ -89,8 +89,8 @@ impl AesNi192Decryptor {
 }
 
 impl BlockEncryptor128 for AesNi192Encryptor {
-    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
-        return encrypt_block_aseni(12, in, self.kw);
+    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
+        return encrypt_block_aseni(12, input, self.kw);
     }
 }
 
@@ -101,8 +101,8 @@ impl SymmetricCipher192 for AesNi192Encryptor {
 }
 
 impl BlockDecryptor128 for AesNi192Decryptor {
-    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
-        return decrypt_block_aseni(12, in, self.kw);
+    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
+        return decrypt_block_aseni(12, input, self.kw);
     }
 }
 
@@ -137,8 +137,8 @@ impl AesNi256Decryptor {
 }
 
 impl BlockEncryptor128 for AesNi256Encryptor {
-    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
-        return encrypt_block_aseni(14, in, self.kw);
+    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
+        return encrypt_block_aseni(14, input, self.kw);
     }
 }
 
@@ -149,8 +149,8 @@ impl SymmetricCipher256 for AesNi256Encryptor {
 }
 
 impl BlockDecryptor128 for AesNi256Decryptor {
-    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
-        return decrypt_block_aseni(14, in, self.kw);
+    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
+        return decrypt_block_aseni(14, input, self.kw);
     }
 }
 
@@ -356,7 +356,7 @@ fn setup_working_key_aesni_256(key: &[u8, ..32], key_type: KeyType) -> [u8, ..16
     [0u8, ..16 * (14 + 1)]
 }
 
-fn encrypt_block_aseni(rounds: uint, in: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
+fn encrypt_block_aseni(rounds: uint, input: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
     use std::cast::transmute;
 
     let out = [0u8, ..16];
@@ -365,7 +365,7 @@ fn encrypt_block_aseni(rounds: uint, in: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
         let mut rounds = rounds;
         let mut kwp: *u8 = kw.unsafe_ref(0);
         let outp: *u8 = out.unsafe_ref(0);
-        let inp: *u8 = in.unsafe_ref(0);
+        let inp: *u8 = input.unsafe_ref(0);
 
         asm!(
         "
@@ -403,14 +403,14 @@ fn encrypt_block_aseni(rounds: uint, in: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
     return out;
 }
 
-fn decrypt_block_aseni(rounds: uint, in: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
+fn decrypt_block_aseni(rounds: uint, input: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
     let out = [0u8, ..16];
 
     unsafe {
         let mut rounds = rounds;
         let mut kwp: *u8 = kw.unsafe_ref(kw.len() - 16);
         let outp: *u8 = out.unsafe_ref(0);
-        let inp: *u8 = in.unsafe_ref(0);
+        let inp: *u8 = input.unsafe_ref(0);
 
         asm!(
         "

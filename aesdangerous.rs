@@ -52,9 +52,9 @@ macro_rules! define_aes_enc(
         $rounds:expr
     ) => (
         impl BlockEncryptor128 for $name {
-            fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
+            fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
                 assert!(self.initialized);
-                return encrypt_block($rounds, in, self.working_key);
+                return encrypt_block($rounds, input, self.working_key);
             }
         }
     )
@@ -66,9 +66,9 @@ macro_rules! define_aes_dec(
         $rounds:expr
     ) => (
         impl BlockDecryptor128 for $name {
-            fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16] {
+            fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
                 assert!(self.initialized);
-                return decrypt_block($rounds, in, self.working_key);
+                return decrypt_block($rounds, input, self.working_key);
             }
         }
     )
@@ -190,30 +190,30 @@ fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, W: &mut [[u32,
     }
 }
 
-fn unpack(in: &[u8, ..16]) -> (u32, u32, u32, u32) {
+fn unpack(input: &[u8, ..16]) -> (u32, u32, u32, u32) {
     let C0 =
-        (in[0] as u32) |
-        (in[1] as u32) << 8 |
-        (in[2] as u32) << 16 |
-        (in[3] as u32) << 24;
+        (input[0] as u32) |
+        (input[1] as u32) << 8 |
+        (input[2] as u32) << 16 |
+        (input[3] as u32) << 24;
 
     let C1 =
-        (in[4] as u32) |
-        (in[5] as u32) << 8 |
-        (in[6] as u32) << 16 |
-        (in[7] as u32) << 24;
+        (input[4] as u32) |
+        (input[5] as u32) << 8 |
+        (input[6] as u32) << 16 |
+        (input[7] as u32) << 24;
 
     let C2 =
-        (in[8] as u32) |
-        (in[9] as u32) << 8 |
-        (in[10] as u32) << 16 |
-        (in[11] as u32) << 24;
+        (input[8] as u32) |
+        (input[9] as u32) << 8 |
+        (input[10] as u32) << 16 |
+        (input[11] as u32) << 24;
 
     let C3 =
-        (in[12] as u32) |
-        (in[13] as u32) << 8 |
-        (in[14] as u32) << 16 |
-        (in[15] as u32) << 24;
+        (input[12] as u32) |
+        (input[13] as u32) << 8 |
+        (input[14] as u32) << 16 |
+        (input[15] as u32) << 24;
 
     return (C0, C1, C2, C3);
 }
@@ -244,8 +244,8 @@ fn pack(C0: u32, C1: u32, C2: u32, C3: u32) -> [u8, ..16] {
     return out;
 }
 
-fn encrypt_block(rounds: uint, in: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..16] {
-    let (C0, C1, C2, C3) = unpack(in);
+fn encrypt_block(rounds: uint, input: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..16] {
+    let (C0, C1, C2, C3) = unpack(input);
     let mut C0 = C0;
     let mut C1 = C1;
     let mut C2 = C2;
@@ -348,8 +348,8 @@ fn encrypt_block(rounds: uint, in: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..16]
 }
 
 
-fn decrypt_block(rounds: uint, in: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..16] {
-    let (C0, C1, C2, C3) = unpack(in);
+fn decrypt_block(rounds: uint, input: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..16] {
+    let (C0, C1, C2, C3) = unpack(input);
     let mut C0 = C0;
     let mut C1 = C1;
     let mut C2 = C2;

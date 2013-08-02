@@ -64,44 +64,44 @@ pub trait SymmetricCipher256 {
 
 /// Trait for a Cipher that can encrypt a block of 128 bits
 pub trait BlockEncryptor128 {
-    fn encrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16];
+    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16];
 }
 
 /// Trait for a Cipher that can decrypt a block of 128 bits
 pub trait BlockDecryptor128 {
-    fn decrypt_block(&self, in: &[u8, ..16]) -> [u8, ..16];
+    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16];
 }
 
 /// Trait for a block cipher mode of operation that requires padding the end of the stream
 pub trait PaddedEncryptionMode128 {
-    fn encrypt_block(&mut self, in: &[u8, ..16], handler: &fn(&[u8]));
-    fn encrypt_final_block(&mut self, in: &[u8], handler: &fn(&[u8]));
+    fn encrypt_block(&mut self, input: &[u8, ..16], handler: &fn(&[u8]));
+    fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8]));
 }
 
 /// Trait for a block cipher mode of operation that requires padding the end of the stream
 pub trait PaddedDecryptionMode128 {
-    fn decrypt_block(&mut self, in: &[u8, ..16], handler: &fn(&[u8]));
-    fn decrypt_final_block(&mut self, in: &[u8], handler: &fn(&[u8]));
+    fn decrypt_block(&mut self, input: &[u8, ..16], handler: &fn(&[u8]));
+    fn decrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8]));
 }
 
 /// Trait for an object that buffers data to encrypt until there is a full block
 pub trait EncryptionBuffer {
-    fn encrypt(&mut self, in: &[u8], handler: &fn(&[u8]));
+    fn encrypt(&mut self, input: &[u8], handler: &fn(&[u8]));
     fn final(&mut self, handler: &fn(&[u8]));
 }
 
 /// Trait for an object that buffers data to decrypt until there is a full block
 pub trait DecryptionBuffer {
-    fn decrypt(&mut self, in: &[u8], handler: &fn(&[u8]));
+    fn decrypt(&mut self, input: &[u8], handler: &fn(&[u8]));
     fn final(&mut self, handler: &fn(&[u8]));
 }
 
 /// Trait for an encryptor that can operate on byte streams
 pub trait StreamEncryptor {
-    fn encrypt(&mut self, in: &[u8], out: &mut [u8]);
+    fn encrypt(&mut self, input: &[u8], out: &mut [u8]);
 }
 
 /// Trait for a decryptor that can operate on byte streams
 pub trait StreamDecryptor {
-    fn decrypt(&mut self, in: &[u8], out: &mut [u8]);
+    fn decrypt(&mut self, input: &[u8], out: &mut [u8]);
 }

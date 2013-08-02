@@ -11,65 +11,52 @@
 use std::num::One;
 use std::vec::bytes::{MutableByteVector, copy_memory};
 
-trait Slicer<'self, T> {
-    fn slice_to(&self, x: uint) -> &'self [T];
-    fn slice_from(&self, x: uint) -> &'self [T];
-}
-
-impl <'self, T> Slicer<'self, T> for &'self [T] {
-    fn slice_to(&self, x: uint) -> &'self [T] {
-        return self.slice(0, x);
-    }
-    fn slice_from(&self, x: uint) -> &'self [T] {
-        return self.slice(x, self.len());
-    }
-}
 
 /// Write a u64 into a vector, which must be 8 bytes long. The value is written in big-endian
 /// format.
-pub fn write_u64_be(dst: &mut[u8], in: u64) {
+pub fn write_u64_be(dst: &mut[u8], input: u64) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_be64;
     assert!(dst.len() == 8);
     unsafe {
         let x: *mut i64 = transmute(dst.unsafe_mut_ref(0));
-        *x = to_be64(in as i64);
+        *x = to_be64(input as i64);
     }
 }
 
 /// Write a u32 into a vector, which must be 4 bytes long. The value is written in big-endian
 /// format.
-pub fn write_u32_be(dst: &mut[u8], in: u32) {
+pub fn write_u32_be(dst: &mut[u8], input: u32) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_be32;
     assert!(dst.len() == 4);
     unsafe {
         let x: *mut i32 = transmute(dst.unsafe_mut_ref(0));
-        *x = to_be32(in as i32);
+        *x = to_be32(input as i32);
     }
 }
 
-/// Write a u32 into a vector, which must be 4 bytes long. The value is written in little-endian
+/// Write a u32 into a vector, which must be 4 bytes long. The value is written in big-endian
 /// format.
-pub fn write_u32_le(dst: &mut[u8], in: u32) {
+pub fn write_u32_le(dst: &mut[u8], input: u32) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_le32;
     assert!(dst.len() == 4);
     unsafe {
         let x: *mut i32 = transmute(dst.unsafe_mut_ref(0));
-        *x = to_le32(in as i32);
+        *x = to_le32(input as i32);
     }
 }
 
 /// Read a vector of bytes into a vector of u64s. The values are read in big-endian format.
-pub fn read_u64v_be(dst: &mut[u64], in: &[u8]) {
+pub fn read_u64v_be(dst: &mut[u64], input: &[u8]) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_be64;
-    assert!(dst.len() * 8 == in.len());
+    assert!(dst.len() * 8 == input.len());
     unsafe {
         let mut x: *mut i64 = transmute(dst.unsafe_mut_ref(0));
-        let mut y: *i64 = transmute(in.unsafe_ref(0));
-        for dst.len().times() {
+        let mut y: *i64 = transmute(input.unsafe_ref(0));
+        do dst.len().times() {
             *x = to_be64(*y);
             x = x.offset(1);
             y = y.offset(1);
@@ -78,14 +65,14 @@ pub fn read_u64v_be(dst: &mut[u64], in: &[u8]) {
 }
 
 /// Read a vector of bytes into a vector of u32s. The values are read in big-endian format.
-pub fn read_u32v_be(dst: &mut[u32], in: &[u8]) {
+pub fn read_u32v_be(dst: &mut[u32], input: &[u8]) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_be32;
-    assert!(dst.len() * 4 == in.len());
+    assert!(dst.len() * 4 == input.len());
     unsafe {
         let mut x: *mut i32 = transmute(dst.unsafe_mut_ref(0));
-        let mut y: *i32 = transmute(in.unsafe_ref(0));
-        for dst.len().times() {
+        let mut y: *i32 = transmute(input.unsafe_ref(0));
+        do dst.len().times() {
             *x = to_be32(*y);
             x = x.offset(1);
             y = y.offset(1);
@@ -93,15 +80,15 @@ pub fn read_u32v_be(dst: &mut[u32], in: &[u8]) {
     }
 }
 
-/// Read a vector of bytes into a vector of u32s. The values are read in little-endian format.
-pub fn read_u32v_le(dst: &mut[u32], in: &[u8]) {
+/// Read a vector of bytes into a vector of u32s. The values are read in big-endian format.
+pub fn read_u32v_le(dst: &mut[u32], input: &[u8]) {
     use std::cast::transmute;
     use std::unstable::intrinsics::to_le32;
-    assert!(dst.len() * 4 == in.len());
+    assert!(dst.len() * 4 == input.len());
     unsafe {
         let mut x: *mut i32 = transmute(dst.unsafe_mut_ref(0));
-        let mut y: *i32 = transmute(in.unsafe_ref(0));
-        for dst.len().times() {
+        let mut y: *i32 = transmute(input.unsafe_ref(0));
+        do dst.len().times() {
             *x = to_le32(*y);
             x = x.offset(1);
             y = y.offset(1);
@@ -168,7 +155,7 @@ pub fn shift_add_check_overflow_tuple
 pub trait FixedBuffer {
     /// Input a vector of bytes. If the buffer becomes full, proccess it with the provided
     /// function and then clear the buffer.
-    fn input(&mut self, in: &[u8], func: &fn(&[u8]));
+    fn input(&mut self, input: &[u8], func: &fn(&[u8]));
 
     /// Reset the buffer.
     fn reset(&mut self);
@@ -184,7 +171,7 @@ pub trait FixedBuffer {
     /// Get the current buffer. The buffer must already be full. This clears the buffer as well.
     fn full_buffer<'s>(&'s mut self) -> &'s [u8];
 
-    /// Get the current buffer whether or not its full. This clears the buffer as well.
+    /// Get the current buffer.
     fn current_buffer<'s>(&'s mut self) -> &'s [u8];
 
     /// Get the current position of the buffer.
@@ -199,7 +186,7 @@ pub trait FixedBuffer {
 
 macro_rules! impl_fixed_buffer( ($name:ident, $size:expr) => (
     impl FixedBuffer for $name {
-        fn input(&mut self, in: &[u8], func: &fn(&[u8])) {
+        fn input(&mut self, input: &[u8], func: &fn(&[u8])) {
             let mut i = 0;
 
             // FIXME: #6304 - This local variable shouldn't be necessary.
@@ -209,40 +196,40 @@ macro_rules! impl_fixed_buffer( ($name:ident, $size:expr) => (
             // the data if the buffer becomes full.
             if self.buffer_idx != 0 {
                 let buffer_remaining = size - self.buffer_idx;
-                if in.len() >= buffer_remaining {
+                if input.len() >= buffer_remaining {
                         copy_memory(
                             self.buffer.mut_slice(self.buffer_idx, size),
-                            in.slice_to(buffer_remaining),
+                            input.slice_to(buffer_remaining),
                             buffer_remaining);
                     self.buffer_idx = 0;
                     func(self.buffer);
                     i += buffer_remaining;
                 } else {
                     copy_memory(
-                        self.buffer.mut_slice(self.buffer_idx, self.buffer_idx + in.len()),
-                        in,
-                        in.len());
-                    self.buffer_idx += in.len();
+                        self.buffer.mut_slice(self.buffer_idx, self.buffer_idx + input.len()),
+                        input,
+                        input.len());
+                    self.buffer_idx += input.len();
                     return;
                 }
             }
 
             // While we have at least a full buffer size chunks's worth of data, process that data
             // without copying it into the buffer
-            while in.len() - i >= size {
-                func(in.slice(i, i + size));
+            while input.len() - i >= size {
+                func(input.slice(i, i + size));
                 i += size;
             }
 
             // Copy any input data into the buffer. At this point in the method, the ammount of
             // data left in the input vector will be less than the buffer size and the buffer will
             // be empty.
-            let in_remaining = in.len() - i;
+            let input_remaining = input.len() - i;
             copy_memory(
-                self.buffer.mut_slice(0, in_remaining),
-                in.slice_from(i),
-                in.len() - i);
-            self.buffer_idx += in_remaining;
+                self.buffer.mut_slice(0, input_remaining),
+                input.slice_from(i),
+                input.len() - i);
+            self.buffer_idx += input_remaining;
         }
 
         fn reset(&mut self) {

@@ -13,42 +13,42 @@ use std::num::Zero;
 use std::ops::BitOr;
 use std::uint;
 
-pub fn vec_to_array64<'s>(in: &'s [u8]) -> &'s [u8, ..8] {
-    if(in.len() != 8) {
+pub fn vec_to_array64<'s>(input: &'s [u8]) -> &'s [u8, ..8] {
+    if(input.len() != 8) {
         fail!();
     }
     unsafe {
-        let tmp: &[u8, ..8] = transmute(in.unsafe_ref(0));
+        let tmp: &[u8, ..8] = transmute(input.unsafe_ref(0));
         return tmp;
     }
 }
 
-pub fn vec_to_array128<'s>(in: &'s [u8]) -> &'s [u8, ..16] {
-    if(in.len() != 16) {
+pub fn vec_to_array128<'s>(input: &'s [u8]) -> &'s [u8, ..16] {
+    if(input.len() != 16) {
         fail!();
     }
     unsafe {
-        let tmp: &[u8, ..16] = transmute(in.unsafe_ref(0));
+        let tmp: &[u8, ..16] = transmute(input.unsafe_ref(0));
         return tmp;
     }
 }
 
-pub fn vec_to_array192<'s>(in: &'s [u8]) -> &'s [u8, ..24] {
-    if(in.len() != 24) {
+pub fn vec_to_array192<'s>(input: &'s [u8]) -> &'s [u8, ..24] {
+    if(input.len() != 24) {
         fail!();
     }
     unsafe {
-        let tmp: &[u8, ..24] = transmute(in.unsafe_ref(0));
+        let tmp: &[u8, ..24] = transmute(input.unsafe_ref(0));
         return tmp;
     }
 }
 
-pub fn vec_to_array256<'s>(in: &'s [u8]) -> &'s [u8, ..32] {
-    if(in.len() != 32) {
+pub fn vec_to_array256<'s>(input: &'s [u8]) -> &'s [u8, ..32] {
+    if(input.len() != 32) {
         fail!();
     }
     unsafe {
-        let tmp: &[u8, ..32] = transmute(in.unsafe_ref(0));
+        let tmp: &[u8, ..32] = transmute(input.unsafe_ref(0));
         return tmp;
     }
 }
