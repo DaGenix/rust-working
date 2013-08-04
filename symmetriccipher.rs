@@ -22,11 +22,6 @@ pub trait KeySize24 { }
 /// Trait for an algorithm that uses 16 byte keys
 pub trait KeySize32 { }
 
-/// Trait for a Symmetric Cipher algorithm
-pub trait SymmetricCipher {
-    fn set_key(&mut self, key: &[u8]);
-}
-
 /// Trait for a Cipher that can encrypt a block of data
 pub trait BlockEncryptor {
     fn encrypt_block(&self, input: &[u8], output: &mut [u8]);

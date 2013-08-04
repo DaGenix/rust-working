@@ -20,18 +20,22 @@ pub struct AesNi128Decryptor {
 }
 
 impl AesNi128Encryptor {
-    pub fn new() -> AesNi128Encryptor {
-        return AesNi128Encryptor {
+    pub fn new(key: &[u8]) -> AesNi128Encryptor {
+        let mut e = AesNi128Encryptor {
             round_keys: ([0u8, ..16 * (10 + 1)])
         };
+        setup_working_key_aesni_128(key, Encryption, e.round_keys);
+        return e;
     }
 }
 
 impl AesNi128Decryptor {
-    pub fn new() -> AesNi128Decryptor {
-        return AesNi128Decryptor {
+    pub fn new(key: &[u8]) -> AesNi128Decryptor {
+        let mut d = AesNi128Decryptor {
             round_keys: ([0u8, ..16 * (10 + 1)])
         };
+        setup_working_key_aesni_128(key, Decryption, d.round_keys);
+        return d;
     }
 }
 
@@ -41,23 +45,12 @@ impl BlockEncryptor for AesNi128Encryptor {
     }
 }
 
-impl SymmetricCipher for AesNi128Encryptor {
-    fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_128(key, Encryption, self.round_keys);
-    }
-}
-
 impl BlockDecryptor for AesNi128Decryptor {
     fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
         decrypt_block_aseni(10, input, self.round_keys, output);
     }
 }
 
-impl SymmetricCipher for AesNi128Decryptor {
-    fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_128(key, Decryption, self.round_keys);
-    }
-}
 
 pub struct AesNi192Encryptor {
     priv round_keys: [u8, ..16 * (12 + 1)]
@@ -68,18 +61,22 @@ pub struct AesNi192Decryptor {
 }
 
 impl AesNi192Encryptor {
-    pub fn new() -> AesNi192Encryptor {
-        return AesNi192Encryptor {
+    pub fn new(key: &[u8]) -> AesNi192Encryptor {
+        let mut e = AesNi192Encryptor {
             round_keys: ([0u8, ..16 * (12 + 1)])
         };
+        setup_working_key_aesni_192(key, Encryption, e.round_keys);
+        return e;
     }
 }
 
 impl AesNi192Decryptor {
-    pub fn new() -> AesNi192Decryptor {
-        return AesNi192Decryptor {
+    pub fn new(key: &[u8]) -> AesNi192Decryptor {
+        let mut d =  AesNi192Decryptor {
             round_keys: ([0u8, ..16 * (12 + 1)])
         };
+        setup_working_key_aesni_192(key, Decryption, d.round_keys);
+        return d;
     }
 }
 
@@ -89,23 +86,12 @@ impl BlockEncryptor for AesNi192Encryptor {
     }
 }
 
-impl SymmetricCipher for AesNi192Encryptor {
-    fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_192(key, Encryption, self.round_keys);
-    }
-}
-
 impl BlockDecryptor for AesNi192Decryptor {
     fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
         decrypt_block_aseni(12, input, self.round_keys, output);
     }
 }
 
-impl SymmetricCipher for AesNi192Decryptor {
-    fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_192(key, Decryption, self.round_keys);
-    }
-}
 
 pub struct AesNi256Encryptor {
     priv round_keys: [u8, ..16 * (14 + 1)]
@@ -116,18 +102,22 @@ pub struct AesNi256Decryptor {
 }
 
 impl AesNi256Encryptor {
-    pub fn new() -> AesNi256Encryptor {
-        return AesNi256Encryptor {
+    pub fn new(key: &[u8]) -> AesNi256Encryptor {
+        let mut e = AesNi256Encryptor {
             round_keys: ([0u8, ..16 * (14 + 1)])
         };
+        setup_working_key_aesni_256(key, Encryption, e.round_keys);
+        return e;
     }
 }
 
 impl AesNi256Decryptor {
-    pub fn new() -> AesNi256Decryptor {
-        return AesNi256Decryptor {
+    pub fn new(key: &[u8]) -> AesNi256Decryptor {
+        let mut d = AesNi256Decryptor {
             round_keys: ([0u8, ..16 * (14 + 1)])
         };
+        setup_working_key_aesni_256(key, Decryption, d.round_keys);
+        return d;
     }
 }
 
@@ -137,23 +127,12 @@ impl BlockEncryptor for AesNi256Encryptor {
     }
 }
 
-impl SymmetricCipher for AesNi256Encryptor {
-    fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_256(key, Encryption, self.round_keys);
-    }
-}
-
 impl BlockDecryptor for AesNi256Decryptor {
     fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
         decrypt_block_aseni(14, input, self.round_keys, output);
     }
 }
 
-impl SymmetricCipher for AesNi256Decryptor {
-    fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_256(key, Decryption, self.round_keys);
-    }
-}
 
 enum KeyType {
     Encryption,

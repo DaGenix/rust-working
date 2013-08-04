@@ -34,54 +34,22 @@ macro_rules! define_impl(
         impl $Aes {
             #[cfg(target_arch = "x86")]
             #[cfg(target_arch = "x86_64")]
-            pub fn new() -> $Aes {
+            pub fn new(key: &[u8]) -> $Aes {
                 if supports_aesni() {
                     $Aes {
-                        engine: $AesNiEngine($AesNi::new())
+                        engine: $AesNiEngine($AesNi::new(key))
                     }
                 } else {
                     $Aes {
-                        engine: $AesSafeEngine($AesSafe::new())
+                        engine: $AesSafeEngine($AesSafe::new(key))
                     }
                 }
             }
 
             #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
-            pub fn new() -> $Aes {
+            pub fn new(key: &[u8]) -> $Aes {
                 $Aes {
-                    engine: $AesSafeEngine($AesSafe::new())
-                }
-            }
-        }
-    )
-)
-
-macro_rules! define_init(
-    (
-        $Aes:ident,
-        $AesNiEngine:ident,
-        $AesSafeEngine:ident
-    ) => (
-        impl SymmetricCipher for $Aes {
-            #[cfg(target_arch = "x86")]
-            #[cfg(target_arch = "x86_64")]
-            fn set_key(&mut self, key: &[u8]) {
-                match self.engine {
-                    $AesNiEngine(ref mut engine) => {
-                        engine.set_key(key);
-                    },
-                    $AesSafeEngine(ref mut engine) => {
-                        engine.set_key(key);
-                    }
-                }
-            }
-
-            #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
-            fn set_key(&mut self, key: &[u8]) {
-                match self.engine {
-                    $AesSafeEngine(ref mut engine) => {
-                        engine.set_key(key);
-                    }
+                    engine: $AesSafeEngine($AesSafe::new(key))
                 }
             }
         }
@@ -176,14 +144,6 @@ define_impl!(
     Aes128Decryptor,
     AesNiDecryptionEngine128 => AesNi128Decryptor,
     AesSafeDecryptionEngine128 => AesSafe128Decryptor)
-define_init!(
-    Aes128Encryptor,
-    AesNiEncryptionEngine128,
-    AesSafeEncryptionEngine128)
-define_init!(
-    Aes128Decryptor,
-    AesNiDecryptionEngine128,
-    AesSafeDecryptionEngine128)
 define_enc!(
     Aes128Encryptor,
     AesNiEncryptionEngine128,
@@ -218,14 +178,6 @@ define_impl!(
     Aes192Decryptor,
     AesNiDecryptionEngine192 => AesNi192Decryptor,
     AesSafeDecryptionEngine192 => AesSafe192Decryptor)
-define_init!(
-    Aes192Encryptor,
-    AesNiEncryptionEngine192,
-    AesSafeEncryptionEngine192)
-define_init!(
-    Aes192Decryptor,
-    AesNiDecryptionEngine192,
-    AesSafeDecryptionEngine192)
 define_enc!(
     Aes192Encryptor,
     AesNiEncryptionEngine192,
@@ -260,14 +212,6 @@ define_impl!(
     Aes256Decryptor,
     AesNiDecryptionEngine256 => AesNi256Decryptor,
     AesSafeDecryptionEngine256 => AesSafe256Decryptor)
-define_init!(
-    Aes256Encryptor,
-    AesNiEncryptionEngine256,
-    AesSafeEncryptionEngine256)
-define_init!(
-    Aes256Decryptor,
-    AesNiDecryptionEngine256,
-    AesSafeDecryptionEngine256)
 define_enc!(
     Aes256Encryptor,
     AesNiEncryptionEngine256,
@@ -406,14 +350,7 @@ mod test {
         ];
     }
 
-    fn run_test
-            <E: BlockEncryptor + SymmetricCipher,
-            D: BlockDecryptor + SymmetricCipher>(
-            enc: &mut E,
-            dec: &mut D,
-            test: &Test) {
-        enc.set_key(test.key);
-        dec.set_key(test.key);
+    fn run_test<E: BlockEncryptor, D: BlockDecryptor>(enc: &mut E, dec: &mut D, test: &Test) {
         let mut tmp = [0u8, ..16];
         for data in test.data.iter() {
             enc.encrypt_block(data.plain, tmp);
@@ -428,8 +365,8 @@ mod test {
     fn testAesDefault128() {
         let tests = tests128();
         for t in tests.iter() {
-            let mut enc = Aes128Encryptor::new();
-            let mut dec = Aes128Decryptor::new();
+            let mut enc = Aes128Encryptor::new(t.key);
+            let mut dec = Aes128Decryptor::new(t.key);
             run_test(&mut enc, &mut dec, t);
         }
     }
@@ -438,8 +375,8 @@ mod test {
     fn testAesDefault192() {
         let tests = tests192();
         for t in tests.iter() {
-            let mut enc = Aes192Encryptor::new();
-            let mut dec = Aes192Decryptor::new();
+            let mut enc = Aes192Encryptor::new(t.key);
+            let mut dec = Aes192Decryptor::new(t.key);
             run_test(&mut enc, &mut dec, t);
         }
     }
@@ -448,8 +385,8 @@ mod test {
     fn testAesDefault256() {
         let tests = tests256();
         for t in tests.iter() {
-            let mut enc = Aes256Encryptor::new();
-            let mut dec = Aes256Decryptor::new();
+            let mut enc = Aes256Encryptor::new(t.key);
+            let mut dec = Aes256Decryptor::new(t.key);
             run_test(&mut enc, &mut dec, t);
         }
     }
@@ -462,8 +399,8 @@ mod test {
         if supports_aesni() {
             let tests = tests128();
             for t in tests.iter() {
-                let mut enc = AesNi128Encryptor::new();
-                let mut dec = AesNi128Decryptor::new();
+                let mut enc = AesNi128Encryptor::new(t.key);
+                let mut dec = AesNi128Decryptor::new(t.key);
                 run_test(&mut enc, &mut dec, t);
             }
         }
@@ -476,8 +413,8 @@ mod test {
         if supports_aesni() {
             let tests = tests192();
             for t in tests.iter() {
-                let mut enc = AesNi192Encryptor::new();
-                let mut dec = AesNi192Decryptor::new();
+                let mut enc = AesNi192Encryptor::new(t.key);
+                let mut dec = AesNi192Decryptor::new(t.key);
                 run_test(&mut enc, &mut dec, t);
             }
         }
@@ -490,8 +427,8 @@ mod test {
         if supports_aesni() {
             let tests = tests256();
             for t in tests.iter() {
-                let mut enc = AesNi256Encryptor::new();
-                let mut dec = AesNi256Decryptor::new();
+                let mut enc = AesNi256Encryptor::new(t.key);
+                let mut dec = AesNi256Decryptor::new(t.key);
                 run_test(&mut enc, &mut dec, t);
             }
         }
@@ -502,8 +439,8 @@ mod test {
     fn testAesSafe128() {
         let tests = tests128();
         for t in tests.iter() {
-            let mut enc = AesSafe128Encryptor::new();
-            let mut dec = AesSafe128Decryptor::new();
+            let mut enc = AesSafe128Encryptor::new(t.key);
+            let mut dec = AesSafe128Decryptor::new(t.key);
             run_test(&mut enc, &mut dec, t);
         }
     }
@@ -512,8 +449,8 @@ mod test {
     fn testAesSafe192() {
         let tests = tests192();
         for t in tests.iter() {
-            let mut enc = AesSafe192Encryptor::new();
-            let mut dec = AesSafe192Decryptor::new();
+            let mut enc = AesSafe192Encryptor::new(t.key);
+            let mut dec = AesSafe192Decryptor::new(t.key);
             run_test(&mut enc, &mut dec, t);
         }
     }
@@ -522,8 +459,8 @@ mod test {
     fn testAesSafe256() {
         let tests = tests256();
         for t in tests.iter() {
-            let mut enc = AesSafe256Encryptor::new();
-            let mut dec = AesSafe256Decryptor::new();
+            let mut enc = AesSafe256Encryptor::new(t.key);
+            let mut dec = AesSafe256Decryptor::new(t.key);
             run_test(&mut enc, &mut dec, t);
         }
     }
@@ -541,8 +478,7 @@ mod bench {
         let key: [u8, ..16] = [0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c];
         let plain: [u8, ..16] = [0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a];
 
-        let mut a = AesSafe128Encryptor::new();
-        a.set_key(key);
+        let a = Aes128Encryptor::new(key);
 
         let mut tmp = [0u8, ..16];
 

@@ -20,8 +20,7 @@ macro_rules! define_aes_struct(
         $rounds:expr
     ) => (
         struct $name {
-            round_keys: [[u32, ..4], ..$rounds + 1],
-            initialized: bool
+            round_keys: [[u32, ..4], ..$rounds + 1]
         }
     )
 )
@@ -34,11 +33,12 @@ macro_rules! define_aes_impl(
         $key_size:expr
     ) => (
         impl $name {
-            pub fn new() -> $name {
-                return $name {
-                    round_keys: [[0u32, ..4], ..$rounds + 1],
-                    initialized: false
+            pub fn new(key: &[u8]) -> $name {
+                let mut a =  $name {
+                    round_keys: [[0u32, ..4], ..$rounds + 1]
                 };
+                setup_round_keys(key, $mode, a.round_keys);
+                return a;
             }
         }
     )
@@ -51,7 +51,6 @@ macro_rules! define_aes_enc(
     ) => (
         impl BlockEncryptor for $name {
             fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
-                assert!(self.initialized);
                 encrypt_block($rounds, input, self.round_keys, output);
             }
         }
@@ -65,22 +64,7 @@ macro_rules! define_aes_dec(
     ) => (
         impl BlockDecryptor for $name {
             fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
-                assert!(self.initialized);
                 decrypt_block($rounds, input, self.round_keys, output);
-            }
-        }
-    )
-)
-
-macro_rules! define_aes_init(
-    (
-        $name:ident,
-        $mode:expr
-    ) => (
-        impl SymmetricCipher for $name {
-            fn set_key(&mut self, key: &[u8]) {
-                setup_round_keys(key, $mode, self.round_keys);
-                self.initialized = true;
             }
         }
     )
@@ -92,8 +76,6 @@ define_aes_impl!(AesSafe128Encryptor, Encryption, 10, 16)
 define_aes_impl!(AesSafe128Decryptor, Decryption, 10, 16)
 define_aes_enc!(AesSafe128Encryptor, 10)
 define_aes_dec!(AesSafe128Decryptor, 10)
-define_aes_init!(AesSafe128Encryptor, Encryption)
-define_aes_init!(AesSafe128Decryptor, Decryption)
 
 define_aes_struct!(AesSafe192Encryptor, 12)
 define_aes_struct!(AesSafe192Decryptor, 12)
@@ -101,8 +83,6 @@ define_aes_impl!(AesSafe192Encryptor, Encryption, 12, 24)
 define_aes_impl!(AesSafe192Decryptor, Decryption, 12, 24)
 define_aes_enc!(AesSafe192Encryptor, 12)
 define_aes_dec!(AesSafe192Decryptor, 12)
-define_aes_init!(AesSafe192Encryptor, Encryption)
-define_aes_init!(AesSafe192Decryptor, Decryption)
 
 define_aes_struct!(AesSafe256Encryptor, 14)
 define_aes_struct!(AesSafe256Decryptor, 14)
@@ -110,8 +90,6 @@ define_aes_impl!(AesSafe256Encryptor, Encryption, 14, 32)
 define_aes_impl!(AesSafe256Decryptor, Decryption, 14, 32)
 define_aes_enc!(AesSafe256Encryptor, 14)
 define_aes_dec!(AesSafe256Decryptor, 14)
-define_aes_init!(AesSafe256Encryptor, Encryption)
-define_aes_init!(AesSafe256Decryptor, Decryption)
 
 
 /// Get the value from the specified index using a fixed number of instructions
