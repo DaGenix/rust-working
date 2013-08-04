@@ -204,7 +204,8 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
         let mut temp = round_keys[(i - 1) / 4][(i - 1) % 4];
         if (i % key_words) == 0 {
             temp = sub_word(shift(temp, 8)) ^ rcon((i / key_words) - 1);
-        } else if (key_words > 6) && ((i % key_words) == 4) {
+        } else if (key_words == 8) && ((i % key_words) == 4) {
+            // This is only necessary for AES-256 keys
             temp = sub_word(temp);
         }
         round_keys[i / 4][i % 4] = round_keys[(i - key_words) / 4][(i - key_words) % 4] ^ temp;
@@ -225,11 +226,11 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
 
 fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8]) {
     fn op(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
-        return mcol(s(v) ^ (s(x >> 8) << 8) ^ (s(y >> 16) << 16) ^ (s(z >> 24) <<24)) ^ k;
+        return mcol(s(v) ^ (s(x >> 8) << 8) ^ (s(y >> 16) << 16) ^ (s(z >> 24) << 24)) ^ k;
     }
 
     fn op_end(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
-        return s(v) ^ (s(x >> 8) << 8) ^ (s(y >> 16) << 16) ^ (s(z >> 24) <<24) ^ k;
+        return s(v) ^ (s(x >> 8) << 8) ^ (s(y >> 16) << 16) ^ (s(z >> 24) << 24) ^ k;
     }
 
     let mut r0: u32;
@@ -280,11 +281,12 @@ fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8
 fn decrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8]) {
     fn op(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
         return inv_mcol(s_inv(v) ^ (s_inv(x >> 8) << 8) ^ (s_inv(y >> 16) << 16) ^
-            (s_inv(z >> 24) <<24)) ^ k;
+            (s_inv(z >> 24) << 24)) ^ k;
     }
 
     fn op_end(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
-        return s_inv(v) ^ (s_inv(x >> 8) << 8) ^ (s_inv(y >> 16) << 16) ^ (s_inv(z >> 24) <<24) ^ k;
+        return s_inv(v) ^ (s_inv(x >> 8) << 8) ^ (s_inv(y >> 16) << 16) ^ (s_inv(z >> 24) << 24) ^
+            k;
     }
 
     let mut r0: u32;
