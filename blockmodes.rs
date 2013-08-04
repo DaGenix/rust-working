@@ -19,12 +19,15 @@ macro_rules! impl_padded_modes(
         $EcbEncryptionWithPkcs7Padding:ident,
         $CbcEncryptionWithNoPadding:ident,
         $CbcEncryptionWithPkcs7Padding:ident,
+        $CtrEncryptionMode:ident,
 
-        $EncryptionBuffer:ident
+        $EncryptionBuffer:ident,
         $DecryptionBuffer:ident
     ) =>
     (
         pub mod $modname {
+            use std::vec::bytes;
+
             use cryptoutil::*;
             use symmetriccipher::*;
 
@@ -230,6 +233,55 @@ macro_rules! impl_padded_modes(
                     self.mode.encrypt_final_block(self.buffer.current_buffer(), handler);
                 }
             }
+
+
+            struct $CtrEncryptionMode <A> {
+                priv algo: A,
+                priv last_block: [u8, ..$block_size],
+                priv last_block_idx: uint,
+                priv ctr: [u8, ..$block_size]
+            }
+
+            impl <A: BlockEncryptor> $CtrEncryptionMode<A> {
+                pub fn new(algo: A, iv: &[u8]) -> $CtrEncryptionMode<A> {
+                    let mut m = $CtrEncryptionMode {
+                        algo: algo,
+                        last_block: [0u8, ..$block_size],
+                        last_block_idx: 0,
+                        ctr: [0u8, ..$block_size]
+                    };
+
+                    let bs = $block_size;
+
+                    bytes::copy_memory(m.ctr, iv, bs);
+                    m.algo.encrypt_block(m.ctr, m.last_block);
+
+                    return m;
+                }
+            }
+
+            impl <A: BlockEncryptor> StreamEncryptor for $CtrEncryptionMode<A> {
+                fn encrypt(&mut self, input: &[u8], out: &mut [u8]) {
+                    let mut i = 0;
+                    while i < input.len() {
+                        if self.last_block_idx == $block_size {
+                            // increment the counter
+                            for i in range(0, $block_size) {
+                                self.ctr[i] += 1;
+                                if self.ctr[i] != 0 {
+                                    break;
+                                }
+                            }
+
+                            self.algo.encrypt_block(self.ctr, self.last_block);
+                            self.last_block_idx = 0;
+                        }
+                        out[i] = self.last_block[self.last_block_idx] ^ input[i];
+                        self.last_block_idx += 1;
+                        i += 1;
+                    }
+                }
+            }
         }
     )
 )
@@ -243,7 +295,33 @@ impl_padded_modes!(
     EcbEncryptionWithPkcs7Padding16, // ecb w/ pkcs#7 padding mode name
     CbcEncryptionWithNoPadding16, // cbc w/ no padding mode name
     CbcEncryptionWithPkcsPadding16, // cbc w/ no padding mode name
+    CtrEncryptionMode16, // ctr mode
 
-    EncryptionBuffer16 // EncryptionBuffer for 128 bit block size
+    EncryptionBuffer16, // EncryptionBuffer for 128 bit block size
     DecryptionBuffer16 // EncryptionBuffer for 128 bit block size
 )
+
+#[cfg(test)]
+mod tests {
+    use aes::*;
+    use blockmodes::padded_16::*;
+    use symmetriccipher::*;
+
+    // Test vectors from:
+    // http://www.inconteam.com/software-development/41-encryption/55-aes-test-vectors
+
+    #[test]
+    fn test_ctr_128() {
+        let key: [u8, ..16] = [0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c];
+        let iv: [u8, ..16] = [0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff];
+        let plain: [u8, ..16] = [0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a];
+        let cipher: [u8, ..16] = [0x87, 0x4d, 0x61, 0x91, 0xb6, 0x20, 0xe3, 0x26, 0x1b, 0xef, 0x68, 0x64, 0x99, 0x0d, 0xb6, 0xce];
+
+        let mut a = Aes128Encryptor::new();
+        a.set_key(key);
+        let mut m = CtrEncryptionMode16::new(a, iv);
+        let mut tmp = [0u8, ..16];
+        m.encrypt(plain, tmp);
+        assert!(tmp == cipher);
+    }
+}
