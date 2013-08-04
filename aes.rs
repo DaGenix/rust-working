@@ -35,7 +35,7 @@ macro_rules! define_impl(
             #[cfg(target_arch = "x86")]
             #[cfg(target_arch = "x86_64")]
             pub fn new() -> $Aes {
-                if (supports_aesni()) {
+                if supports_aesni() {
                     $Aes {
                         engine: $AesNiEngine($AesNi::new())
                     }
@@ -48,7 +48,9 @@ macro_rules! define_impl(
 
             #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
             pub fn new() -> $Aes {
-                fail!("Not yet implemented.")
+                $Aes {
+                    engine: $AesSafeEngine($AesSafe::new())
+                }
             }
         }
     )
@@ -61,11 +63,22 @@ macro_rules! define_init(
         $AesSafeEngine:ident
     ) => (
         impl SymmetricCipher for $Aes {
+            #[cfg(target_arch = "x86")]
+            #[cfg(target_arch = "x86_64")]
             fn set_key(&mut self, key: &[u8]) {
                 match self.engine {
                     $AesNiEngine(ref mut engine) => {
                         engine.set_key(key);
                     },
+                    $AesSafeEngine(ref mut engine) => {
+                        engine.set_key(key);
+                    }
+                }
+            }
+
+            #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
+            fn set_key(&mut self, key: &[u8]) {
+                match self.engine {
                     $AesSafeEngine(ref mut engine) => {
                         engine.set_key(key);
                     }
@@ -82,11 +95,22 @@ macro_rules! define_enc(
         $AesSafeEncryptionEngine:ident
     ) => (
         impl BlockEncryptor for $AesEncryptor {
+            #[cfg(target_arch = "x86")]
+            #[cfg(target_arch = "x86_64")]
             fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
                 match self.engine {
                     $AesNiEncryptionEngine(ref engine) => {
                         engine.encrypt_block(input, output);
                     },
+                    $AesSafeEncryptionEngine(ref engine) => {
+                        engine.encrypt_block(input, output);
+                    }
+                }
+            }
+
+            #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
+            fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
+                match self.engine {
                     $AesSafeEncryptionEngine(ref engine) => {
                         engine.encrypt_block(input, output);
                     }
@@ -103,11 +127,22 @@ macro_rules! define_dec(
         $AesSafeDecryptionEngine:ident
     ) => (
         impl BlockDecryptor for $AesDecryptor {
+            #[cfg(target_arch = "x86")]
+            #[cfg(target_arch = "x86_64")]
             fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
                 match self.engine {
                     $AesNiDecryptionEngine(ref engine) => {
                         engine.decrypt_block(input, output);
                     },
+                    $AesSafeDecryptionEngine(ref engine) => {
+                        engine.decrypt_block(input, output);
+                    }
+                }
+            }
+
+            #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
+            fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
+                match self.engine {
                     $AesSafeDecryptionEngine(ref engine) => {
                         engine.decrypt_block(input, output);
                     }
@@ -424,7 +459,7 @@ mod test {
     #[cfg(target_arch = "x86_64")]
     #[test]
     fn testAesNi128() {
-        if (supports_aesni()) {
+        if supports_aesni() {
             let tests = tests128();
             for t in tests.iter() {
                 let mut enc = AesNi128Encryptor::new();
@@ -438,7 +473,7 @@ mod test {
     #[cfg(target_arch = "x86_64")]
     #[test]
     fn testAesNi192() {
-        if (supports_aesni()) {
+        if supports_aesni() {
             let tests = tests192();
             for t in tests.iter() {
                 let mut enc = AesNi192Encryptor::new();
@@ -452,7 +487,7 @@ mod test {
     #[cfg(target_arch = "x86_64")]
     #[test]
     fn testAesNi256() {
-        if (supports_aesni()) {
+        if supports_aesni() {
             let tests = tests256();
             for t in tests.iter() {
                 let mut enc = AesNi256Encryptor::new();
