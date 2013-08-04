@@ -180,6 +180,7 @@ unsafe fn aesimc(kw: *u8) {
     )
 }
 
+#[inline(never)]
 fn setup_working_key_aesni_128(key: &[u8, ..16], key_type: KeyType) -> [u8, ..16 * (10 + 1)] {
     let kw = [0u8, ..16 * (10 + 1)];
 
@@ -238,13 +239,13 @@ fn setup_working_key_aesni_128(key: &[u8, ..16], key_type: KeyType) -> [u8, ..16
         )
 
         match key_type {
-            Encryption => { /* nothing more to do */ }
             Decryption => {
                 // range of rounds keys from #1 to #9; skip the first and last key
                 for i in range(1u, 10) {
                     aesimc(kw.unsafe_ref(16 * i));
                 }
             }
+            Encryption => { /* nothing more to do */ }
         }
     }
 
@@ -357,6 +358,7 @@ fn setup_working_key_aesni_256(key: &[u8, ..32], key_type: KeyType) -> [u8, ..16
     [0u8, ..16 * (14 + 1)]
 }
 
+#[inline(never)]
 fn encrypt_block_aseni(rounds: uint, input: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
     use std::cast::transmute;
 
@@ -404,6 +406,7 @@ fn encrypt_block_aseni(rounds: uint, input: &[u8, ..16], kw: &[u8]) -> [u8, ..16
     return out;
 }
 
+#[inline(never)]
 fn decrypt_block_aseni(rounds: uint, input: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
     let out = [0u8, ..16];
 
