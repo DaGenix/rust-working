@@ -8,8 +8,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::uint;
-
 use symmetriccipher::*;
 
 /*
@@ -256,8 +254,6 @@ fn setup_working_key_aesni_256(key: &[u8], key_type: KeyType, round_key: &mut [u
 
 #[inline(never)]
 fn encrypt_block_aseni(rounds: uint, input: &[u8], kw: &[u8], output: &mut [u8]) {
-    use std::cast::transmute;
-
     unsafe {
         let mut rounds = rounds;
         let mut kwp: *u8 = kw.unsafe_ref(0);

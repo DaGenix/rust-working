@@ -9,7 +9,6 @@
 // except according to those terms.
 
 use std::uint;
-use std::u32;
 
 use cryptoutil::*;
 use symmetriccipher::*;
@@ -144,7 +143,7 @@ fn rcon(idx: uint) -> u32 {
 }
 
 fn shift(r: u32, shift: u32) -> u32 {
-    return (r >> shift) | (r << 32 - shift);
+    return (r >> shift) | (r << (32 - shift));
 }
 
 fn ffmulx(x: u32) -> u32 {
@@ -191,7 +190,7 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
     // They key becomes the first few round keys - just copy it directly
     let mut j = 0;
     do uint::range_step(0, key.len(), 4) |i| {
-        round_keys[j / 4][j & 3] =
+        round_keys[j / 4][j % 4] =
             (key[i] as u32) |
             ((key[i+1] as u32) << 8) |
             ((key[i+2] as u32) << 16) |
@@ -202,13 +201,13 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
 
     // Calculate the rest of the round keys
     for i in range(key_words, (rounds + 1) * 4) {
-        let mut temp = round_keys[(i - 1) / 4][(i - 1) & 3];
+        let mut temp = round_keys[(i - 1) / 4][(i - 1) % 4];
         if (i % key_words) == 0 {
             temp = sub_word(shift(temp, 8)) ^ rcon((i / key_words) - 1);
         } else if (key_words > 6) && ((i % key_words) == 4) {
             temp = sub_word(temp);
         }
-        round_keys[i / 4][i & 3] = round_keys[(i - key_words) / 4][(i - key_words) & 3] ^ temp;
+        round_keys[i / 4][i % 4] = round_keys[(i - key_words) / 4][(i - key_words) % 4] ^ temp;
     }
 
     // Decryption round keys require extra processing
@@ -221,11 +220,6 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
             }
         },
         Encryption => { }
-    }
-
-    unsafe {
-        use std::cast::transmute;
-        let p: &[u8] = transmute(round_keys);
     }
 }
 

@@ -9,14 +9,17 @@
 // except according to those terms.
 
 use aesni::*;
-// use aesdangerous::*;
 use aessafe::*;
 use symmetriccipher::*;
 use util::*;
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// AES - Default handlinger for 128 bit varient
-////////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+macro_rules! define_enum()
+macro_rules! define_struct()
+macro_rules! define_impl()
+macro_rules! define_enc()
+macro_rules! define_enc()
+*/
 
 enum AesEncryptionEngine128 {
     #[cfg(target_arch = "x86")]
@@ -378,11 +381,8 @@ impl BlockDecryptor128 for Aes256Decryptor {
 
 #[cfg(test)]
 mod test {
-    use std::vec;
-
     use aes::*;
     use aesni::*;
-//    use aesdangerous::*;
     use aessafe::*;
     use symmetriccipher::*;
     use util::*;
@@ -398,20 +398,6 @@ mod test {
     struct TestData {
         plain: ~[u8],
         cipher: ~[u8]
-    }
-
-    // TODO: Remove me
-    fn to_hex(rr: &[u8]) -> ~str {
-        use std::uint;
-        let mut s = ~"";
-        for b in rr.iter() {
-            let hex = uint::to_str_radix(*b as uint, 16u);
-            if hex.len() == 1 {
-                s.push_char('0');
-            }
-            s.push_str(hex);
-        }
-        return s;
     }
 
     fn tests128() -> ~[Test] {
@@ -538,34 +524,39 @@ mod test {
         }
     }
 
-/*
+
     #[test]
     fn testAesDefault128() {
-        for t in tests128.iter() {
+        let tests = tests128();
+        for t in tests.iter() {
             let mut enc = Aes128Encryptor::new();
             let mut dec = Aes128Decryptor::new();
-            run_test128(&mut enc, &mut dec, t);
+            run_test(&mut enc, &mut dec, t);
         }
     }
 
+    /*
     #[test]
     fn testAesDefault192() {
-        for t in tests192.iter() {
+        let tests = tests192();
+        for t in tests.iter() {
             let mut enc = Aes192Encryptor::new();
             let mut dec = Aes192Decryptor::new();
-            run_test192(&mut enc, &mut dec, t);
+            run_test(&mut enc, &mut dec, t);
         }
     }
 
     #[test]
     fn testAesDefault256() {
-        for t in tests256.iter() {
+        let tests = tests256();
+        for t in tests.iter() {
             let mut enc = Aes256Encryptor::new();
             let mut dec = Aes256Decryptor::new();
-            run_test256(&mut enc, &mut dec, t);
+            run_test(&mut enc, &mut dec, t);
         }
     }
-*/
+    */
+
 
     #[cfg(target_arch = "x86")]
     #[cfg(target_arch = "x86_64")]
@@ -609,34 +600,6 @@ mod test {
         }
     }
 
-    /*
-    #[test]
-    fn testAesDangerous128() {
-        for t in tests128.iter() {
-            let mut enc = Aes128Encrypt::new();
-            let mut dec = Aes128Decrypt::new();
-            run_test128(&mut enc, &mut dec, t);
-        }
-    }
-
-    #[test]
-    fn testAesDangerous192() {
-        for t in tests192.iter() {
-            let mut enc = Aes192Encrypt::new();
-            let mut dec = Aes192Decrypt::new();
-            run_test192(&mut enc, &mut dec, t);
-        }
-    }
-
-    #[test]
-    fn testAesDangerous256() {
-        for t in tests256.iter() {
-            let mut enc = Aes256Encrypt::new();
-            let mut dec = Aes256Decrypt::new();
-            run_test256(&mut enc, &mut dec, t);
-        }
-    }
-    */
 
     #[test]
     fn testAesSafe128() {

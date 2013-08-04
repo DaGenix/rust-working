@@ -8,63 +8,33 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::uint;
-use std::cast::transmute;
-use std::vec::bytes;
+pub use blockmodes::padded_16;
 
-pub use blockmodes::*;
-
-/*
-pub trait SymmetricCipher128
-pub trait SymmetricCipher192
-pub trait SymmetricCipher256
-
-pub trait BlockEncryptor128
-pub trait BlockDecryptor128
-
-pub trait PaddedEncryptionMode128
-pub trait PaddedDecryptionMode128
-struct EcbEncryptionWithNoPadding128
-struct EcbEncryptionWithCtsPadding128
-struct EcbEncryptionWithPkcs7Padding128
-struct CbcEncryptionWithNoPadding128
-struct CbcEncryptionWithCtsPadding128
-struct CbcEncryptionWithPkcs7Padding128
-
-pub trait EncryptionBuffer
-pub trait DecryptionBuffer
-struct PaddedEncryptionBuffer128
-struct PaddedDecryptionBuffer128
-struct StreamEncryptionBuffer
-struct StreamDecryptionBuffer
-
-pub trait StreamEncryptor
-pub trait StreamDecryptor
-struct CtrMode
-struct CtsMode
-struct CfbMode
-struct OfbMode
-
-*/
-
+/// Trait for an algorithm that works on blocks of 16 bytes at a time
 pub trait BlockSize16 { }
+
+/// Trait for an algorithm that uses 16 byte keys
+pub trait KeySize16 { }
+
+/// Trait for an algorithm that uses 16 byte keys
+pub trait KeySize24 { }
+
+/// Trait for an algorithm that uses 16 byte keys
+pub trait KeySize32 { }
 
 /// Trait for a Symmetric Cipher algorithm
 pub trait SymmetricCipher {
     fn set_key(&mut self, key: &[u8]);
-//    fn key_size(&self) -> uint;
 }
 
 /// Trait for a Cipher that can encrypt a block of data
 pub trait BlockEncryptor {
     fn encrypt_block(&self, input: &[u8], output: &mut [u8]);
-//    fn block_size(&self) -> uint;
 }
 
 /// Trait for a Cipher that can decrypt a block of data
 pub trait BlockDecryptor {
     fn decrypt_block(&self, input: &[u8], output: &mut [u8]);
-//    fn block_size(&self) -> uint;
 }
 
 /// Trait for a block cipher mode of operation that requires padding the end of the stream

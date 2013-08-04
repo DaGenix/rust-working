@@ -24,12 +24,9 @@ macro_rules! impl_padded_modes(
         $DecryptionBuffer:ident
     ) =>
     (
-        mod $modname {
-            use std::uint;
-
+        pub mod $modname {
             use cryptoutil::*;
             use symmetriccipher::*;
-            use util::*;
 
 
             pub struct $EcbEncryptionWithNoPadding<A> {
@@ -131,12 +128,11 @@ macro_rules! impl_padded_modes(
 
             impl <A: BlockEncryptor> PaddedEncryptionMode for $CbcEncryptionWithNoPadding<A> {
                 fn encrypt_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
+                    let mut tmp = [0u8, ..$block_size];
                     for i in range(0, $block_size) {
-                        self.last_block[i] ^ input[i];
+                        tmp[i] = self.last_block[i] ^ input[i];
                     }
-                    fail!("yikes, not implemented.");
-                    // TODO - what to do here?
-                    // self.algo.encrypt_block(&self.last_block, self.last_block);
+                    self.algo.encrypt_block(tmp, self.last_block);
                     handler(self.last_block);
                 }
                 fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
@@ -172,12 +168,11 @@ macro_rules! impl_padded_modes(
 
             impl <A: BlockEncryptor> PaddedEncryptionMode for $CbcEncryptionWithPkcs7Padding<A> {
                 fn encrypt_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
+                    let mut tmp = [0u8, ..$block_size];
                     for i in range(0, $block_size) {
-                        self.last_block[i] ^ input[i];
+                        tmp[i] = self.last_block[i] ^ input[i];
                     }
-                    fail!("yikes, not implemented.");
-                    // TODO - what to do here?
-                    // self.last_block = self.algo.encrypt_block(&self.last_block);
+                    self.algo.encrypt_block(tmp, self.last_block);
                     handler(self.last_block);
                 }
 
