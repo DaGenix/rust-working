@@ -10,22 +10,18 @@
 
 use symmetriccipher::*;
 
-/*
- * A Simple AES implementation using Intel AES-NI instructions
- */
-
 pub struct AesNi128Encryptor {
-    priv kw: [u8, ..16 * (10 + 1)]
+    priv round_keys: [u8, ..16 * (10 + 1)]
 }
 
 pub struct AesNi128Decryptor {
-    priv kw: [u8, ..16 * (10 + 1)]
+    priv round_keys: [u8, ..16 * (10 + 1)]
 }
 
 impl AesNi128Encryptor {
     pub fn new() -> AesNi128Encryptor {
         return AesNi128Encryptor {
-            kw: ([0u8, ..16 * (10 + 1)])
+            round_keys: ([0u8, ..16 * (10 + 1)])
         };
     }
 }
@@ -33,47 +29,47 @@ impl AesNi128Encryptor {
 impl AesNi128Decryptor {
     pub fn new() -> AesNi128Decryptor {
         return AesNi128Decryptor {
-            kw: ([0u8, ..16 * (10 + 1)])
+            round_keys: ([0u8, ..16 * (10 + 1)])
         };
     }
 }
 
 impl BlockEncryptor for AesNi128Encryptor {
     fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
-        encrypt_block_aseni(10, input, self.kw, output);
+        encrypt_block_aseni(10, input, self.round_keys, output);
     }
 }
 
 impl SymmetricCipher for AesNi128Encryptor {
     fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_128(key, Encryption, self.kw);
+        setup_working_key_aesni_128(key, Encryption, self.round_keys);
     }
 }
 
 impl BlockDecryptor for AesNi128Decryptor {
     fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
-        decrypt_block_aseni(10, input, self.kw, output);
+        decrypt_block_aseni(10, input, self.round_keys, output);
     }
 }
 
 impl SymmetricCipher for AesNi128Decryptor {
     fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_128(key, Decryption, self.kw);
+        setup_working_key_aesni_128(key, Decryption, self.round_keys);
     }
 }
 
 pub struct AesNi192Encryptor {
-    priv kw: [u8, ..16 * (12 + 1)]
+    priv round_keys: [u8, ..16 * (12 + 1)]
 }
 
 pub struct AesNi192Decryptor {
-    priv kw: [u8, ..16 * (12 + 1)]
+    priv round_keys: [u8, ..16 * (12 + 1)]
 }
 
 impl AesNi192Encryptor {
     pub fn new() -> AesNi192Encryptor {
         return AesNi192Encryptor {
-            kw: ([0u8, ..16 * (12 + 1)])
+            round_keys: ([0u8, ..16 * (12 + 1)])
         };
     }
 }
@@ -81,47 +77,47 @@ impl AesNi192Encryptor {
 impl AesNi192Decryptor {
     pub fn new() -> AesNi192Decryptor {
         return AesNi192Decryptor {
-            kw: ([0u8, ..16 * (12 + 1)])
+            round_keys: ([0u8, ..16 * (12 + 1)])
         };
     }
 }
 
 impl BlockEncryptor for AesNi192Encryptor {
     fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
-        encrypt_block_aseni(12, input, self.kw, output);
+        encrypt_block_aseni(12, input, self.round_keys, output);
     }
 }
 
 impl SymmetricCipher for AesNi192Encryptor {
     fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_192(key, Encryption, self.kw);
+        setup_working_key_aesni_192(key, Encryption, self.round_keys);
     }
 }
 
 impl BlockDecryptor for AesNi192Decryptor {
     fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
-        decrypt_block_aseni(12, input, self.kw, output);
+        decrypt_block_aseni(12, input, self.round_keys, output);
     }
 }
 
 impl SymmetricCipher for AesNi192Decryptor {
     fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_192(key, Decryption, self.kw);
+        setup_working_key_aesni_192(key, Decryption, self.round_keys);
     }
 }
 
 pub struct AesNi256Encryptor {
-    priv kw: [u8, ..16 * (14 + 1)]
+    priv round_keys: [u8, ..16 * (14 + 1)]
 }
 
 pub struct AesNi256Decryptor {
-    priv kw: [u8, ..16 * (14 + 1)]
+    priv round_keys: [u8, ..16 * (14 + 1)]
 }
 
 impl AesNi256Encryptor {
     pub fn new() -> AesNi256Encryptor {
         return AesNi256Encryptor {
-            kw: ([0u8, ..16 * (14 + 1)])
+            round_keys: ([0u8, ..16 * (14 + 1)])
         };
     }
 }
@@ -129,32 +125,32 @@ impl AesNi256Encryptor {
 impl AesNi256Decryptor {
     pub fn new() -> AesNi256Decryptor {
         return AesNi256Decryptor {
-            kw: ([0u8, ..16 * (14 + 1)])
+            round_keys: ([0u8, ..16 * (14 + 1)])
         };
     }
 }
 
 impl BlockEncryptor for AesNi256Encryptor {
     fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
-        encrypt_block_aseni(14, input, self.kw, output);
+        encrypt_block_aseni(14, input, self.round_keys, output);
     }
 }
 
 impl SymmetricCipher for AesNi256Encryptor {
     fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_256(key, Encryption, self.kw);
+        setup_working_key_aesni_256(key, Encryption, self.round_keys);
     }
 }
 
 impl BlockDecryptor for AesNi256Decryptor {
     fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
-        decrypt_block_aseni(14, input, self.kw, output);
+        decrypt_block_aseni(14, input, self.round_keys, output);
     }
 }
 
 impl SymmetricCipher for AesNi256Decryptor {
     fn set_key(&mut self, key: &[u8]) {
-        setup_working_key_aesni_256(key, Decryption, self.kw);
+        setup_working_key_aesni_256(key, Decryption, self.round_keys);
     }
 }
 
@@ -164,7 +160,7 @@ enum KeyType {
 }
 
 #[inline]
-unsafe fn aesimc(kw: *u8) {
+unsafe fn aesimc(round_keys: *u8) {
     asm!(
     "
     movdqu ($0), %xmm1
@@ -172,7 +168,7 @@ unsafe fn aesimc(kw: *u8) {
     movdqu %xmm1, ($0)
     "
     : // outputs
-    : "r" (kw) // inputs
+    : "r" (round_keys) // inputs
     : "xmm1", "memory" // clobbers
     : "volatile"
     )
@@ -181,7 +177,7 @@ unsafe fn aesimc(kw: *u8) {
 #[inline(never)]
 fn setup_working_key_aesni_128(key: &[u8], key_type: KeyType, round_key: &mut [u8]) {
     unsafe {
-        let mut kwp: *u8 = round_key.unsafe_ref(0);
+        let mut round_keysp: *u8 = round_key.unsafe_ref(0);
         let keyp: *u8 = key.unsafe_ref(0);
 
         asm!(
@@ -228,8 +224,8 @@ fn setup_working_key_aesni_128(key: &[u8], key_type: KeyType, round_key: &mut [u
 
             end_key_128:
         "
-        : "=r" (kwp)
-        : "r" (keyp), "0" (kwp)
+        : "=r" (round_keysp)
+        : "r" (keyp), "0" (round_keysp)
         : "xmm1", "xmm2", "xmm3", "memory"
         : "volatile"
         )
@@ -253,10 +249,10 @@ fn setup_working_key_aesni_256(key: &[u8], key_type: KeyType, round_key: &mut [u
 }
 
 #[inline(never)]
-fn encrypt_block_aseni(rounds: uint, input: &[u8], kw: &[u8], output: &mut [u8]) {
+fn encrypt_block_aseni(rounds: uint, input: &[u8], round_keys: &[u8], output: &mut [u8]) {
     unsafe {
         let mut rounds = rounds;
-        let mut kwp: *u8 = kw.unsafe_ref(0);
+        let mut round_keysp: *u8 = round_keys.unsafe_ref(0);
         let outp: *u8 = output.unsafe_ref(0);
         let inp: *u8 = input.unsafe_ref(0);
 
@@ -286,8 +282,8 @@ fn encrypt_block_aseni(rounds: uint, input: &[u8], kw: &[u8], output: &mut [u8])
         /* Finally, move the result from xmm15 to outp */
         movdqu %xmm15, ($3)
         "
-        : "=r" (rounds), "=r" (kwp) // outputs
-        : "r" (inp), "r" (outp), "0" (rounds), "1" (kwp) // inputs
+        : "=r" (rounds), "=r" (round_keysp) // outputs
+        : "r" (inp), "r" (outp), "0" (rounds), "1" (round_keysp) // inputs
         : "xmm0", "xmm15", "memory", "cc" // clobbers
         : "volatile" // options
         );
@@ -295,10 +291,10 @@ fn encrypt_block_aseni(rounds: uint, input: &[u8], kw: &[u8], output: &mut [u8])
 }
 
 #[inline(never)]
-fn decrypt_block_aseni(rounds: uint, input: &[u8], kw: &[u8], output: &mut [u8]) {
+fn decrypt_block_aseni(rounds: uint, input: &[u8], round_keys: &[u8], output: &mut [u8]) {
     unsafe {
         let mut rounds = rounds;
-        let mut kwp: *u8 = kw.unsafe_ref(kw.len() - 16);
+        let mut round_keysp: *u8 = round_keys.unsafe_ref(round_keys.len() - 16);
         let outp: *u8 = output.unsafe_ref(0);
         let inp: *u8 = input.unsafe_ref(0);
 
@@ -328,8 +324,8 @@ fn decrypt_block_aseni(rounds: uint, input: &[u8], kw: &[u8], output: &mut [u8])
         /* Finally, move the result from xmm15 to outp */
         movdqu %xmm15, ($3)
         "
-        : "=r" (rounds), "=r" (kwp) // outputs
-        : "r" (inp), "r" (outp), "0" (rounds), "1" (kwp) // inputs
+        : "=r" (rounds), "=r" (round_keysp) // outputs
+        : "r" (inp), "r" (outp), "0" (rounds), "1" (round_keysp) // inputs
         : "xmm0", "xmm15", "memory", "cc" // clobbers
         : "volatile" // options
         );
