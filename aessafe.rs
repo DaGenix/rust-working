@@ -146,7 +146,7 @@ fn rcon(idx: uint) -> u32 {
 }
 
 fn shift(r: u32, shift: u32) -> u32 {
-    return (r >> shift) | (r << -shift);
+    return (r >> shift) | (r << (32 - shift));
 }
 
 fn ffmulx(x: u32) -> u32 {

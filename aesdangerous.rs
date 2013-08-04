@@ -119,7 +119,7 @@ define_aes_init!(Aes256Encrypt, SymmetricCipher256, &[u8, ..32], Encryption, 14)
 define_aes_init!(Aes256Decrypt, SymmetricCipher256, &[u8, ..32], Decryption, 14)
 
 fn shift(r: u32, shift: u32) -> u32 {
-    return (r >> shift) | (r << -shift);
+    return (r >> shift) | (r << (32 - shift));
 }
 
 // multiply four bytes in GF(2^8) by 'x' {02} in parallel
