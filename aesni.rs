@@ -8,6 +8,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::vec::bytes;
+
 use symmetriccipher::*;
 
 pub struct AesNi128Encryptor {
@@ -177,14 +179,16 @@ unsafe fn aesimc(round_keys: *u8) {
 #[inline(never)]
 fn setup_working_key_aesni_128(key: &[u8], key_type: KeyType, round_key: &mut [u8]) {
     unsafe {
+        // copy the key into the round_key
+        bytes::copy_memory(round_key, key, key.len());
+
         let mut round_keysp: *u8 = round_key.unsafe_ref(0);
         let keyp: *u8 = key.unsafe_ref(0);
 
         asm!(
         "
             movdqu ($1), %xmm1
-            movdqu %xmm1, ($0)
-            add $$0x10, $0
+            add $$0x10, $0 /* skip over the bytes we already copied */
 
             aeskeygenassist $$0x01, %xmm1, %xmm2
             call key_expansion_128
