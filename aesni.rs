@@ -346,6 +346,7 @@ fn setup_working_key_aesni_192(key: &[u8], key_type: KeyType, round_key: &mut [u
     }
 }
 
+#[inline(never)]
 fn setup_working_key_aesni_256(key: &[u8], key_type: KeyType, round_key: &mut [u8]) {
     unsafe {
         let mut round_keysp: *u8 = round_key.unsafe_ref(0);
