@@ -13,371 +13,235 @@ use aessafe::*;
 use symmetriccipher::*;
 use util::*;
 
-/*
-macro_rules! define_enum()
-macro_rules! define_struct()
-macro_rules! define_impl()
-macro_rules! define_enc()
-macro_rules! define_enc()
-*/
+
+macro_rules! define_struct(
+    (
+        $Aes:ident,
+        $AesEngine:ident
+    ) => (
+        struct $Aes {
+            engine: $AesEngine
+        }
+    )
+)
+
+macro_rules! define_impl(
+    (
+        $Aes:ident,
+        $AesNiEngine:ident => $AesNi: ident,
+        $AesSafeEngine:ident => $AesSafe:ident
+    ) => (
+        impl $Aes {
+            #[cfg(target_arch = "x86")]
+            #[cfg(target_arch = "x86_64")]
+            pub fn new() -> $Aes {
+                if (supports_aesni()) {
+                    $Aes {
+                        engine: $AesNiEngine($AesNi::new())
+                    }
+                } else {
+                    $Aes {
+                        engine: $AesSafeEngine($AesSafe::new())
+                    }
+                }
+            }
+
+            #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
+            pub fn new() -> $Aes {
+                fail!("Not yet implemented.")
+            }
+        }
+    )
+)
+
+macro_rules! define_init(
+    (
+        $Aes:ident,
+        $AesNiEngine:ident,
+        $AesSafeEngine:ident
+    ) => (
+        impl SymmetricCipher for $Aes {
+            fn set_key(&mut self, key: &[u8]) {
+                match self.engine {
+                    $AesNiEngine(ref mut engine) => {
+                        engine.set_key(key);
+                    },
+                    $AesSafeEngine(ref mut engine) => {
+                        engine.set_key(key);
+                    }
+                }
+            }
+        }
+    )
+)
+
+macro_rules! define_enc(
+    (
+        $AesEncryptor:ident,
+        $AesNiEncryptionEngine:ident,
+        $AesSafeEncryptionEngine:ident
+    ) => (
+        impl BlockEncryptor for $AesEncryptor {
+            fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
+                match self.engine {
+                    $AesNiEncryptionEngine(ref engine) => {
+                        engine.encrypt_block(input, output);
+                    },
+                    $AesSafeEncryptionEngine(ref engine) => {
+                        engine.encrypt_block(input, output);
+                    }
+                }
+            }
+        }
+    )
+)
+
+macro_rules! define_dec(
+    (
+        $AesDecryptor:ident,
+        $AesNiDecryptionEngine:ident,
+        $AesSafeDecryptionEngine:ident
+    ) => (
+        impl BlockDecryptor for $AesDecryptor {
+            fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
+                match self.engine {
+                    $AesNiDecryptionEngine(ref engine) => {
+                        engine.decrypt_block(input, output);
+                    },
+                    $AesSafeDecryptionEngine(ref engine) => {
+                        engine.decrypt_block(input, output);
+                    }
+                }
+            }
+        }
+    )
+)
 
 enum AesEncryptionEngine128 {
     #[cfg(target_arch = "x86")]
     #[cfg(target_arch = "x86_64")]
     AesNiEncryptionEngine128(AesNi128Encryptor),
-    AesSoftwareSafeEncryptionEngine128(AesSafe128Encryptor)
+    AesSafeEncryptionEngine128(AesSafe128Encryptor)
 }
 
 enum AesDecryptionEngine128 {
     #[cfg(target_arch = "x86")]
     #[cfg(target_arch = "x86_64")]
     AesNiDecryptionEngine128(AesNi128Decryptor),
-    AesSoftwareSafeDecryptionEngine128(AesSafe128Decryptor)
+    AesSafeDecryptionEngine128(AesSafe128Decryptor)
 }
 
-struct Aes128Encryptor {
-    engine: AesEncryptionEngine128
-}
+define_struct!(Aes128Encryptor, AesEncryptionEngine128)
+define_struct!(Aes128Decryptor, AesDecryptionEngine128)
+define_impl!(
+    Aes128Encryptor,
+    AesNiEncryptionEngine128 => AesNi128Encryptor,
+    AesSafeEncryptionEngine128 => AesSafe128Encryptor)
+define_impl!(
+    Aes128Decryptor,
+    AesNiDecryptionEngine128 => AesNi128Decryptor,
+    AesSafeDecryptionEngine128 => AesSafe128Decryptor)
+define_init!(
+    Aes128Encryptor,
+    AesNiEncryptionEngine128,
+    AesSafeEncryptionEngine128)
+define_init!(
+    Aes128Decryptor,
+    AesNiDecryptionEngine128,
+    AesSafeDecryptionEngine128)
+define_enc!(
+    Aes128Encryptor,
+    AesNiEncryptionEngine128,
+    AesSafeEncryptionEngine128)
+define_dec!(
+    Aes128Decryptor,
+    AesNiDecryptionEngine128,
+    AesSafeDecryptionEngine128)
 
-struct Aes128Decryptor {
-    engine: AesDecryptionEngine128
-}
-
-impl Aes128Encryptor {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
-    pub fn new() -> Aes128Encryptor {
-        if (supports_aesni()) {
-            Aes128Encryptor {
-                engine: AesNiEncryptionEngine128(AesNi128Encryptor::new())
-            }
-        } else {
-            Aes128Encryptor {
-                engine: AesSoftwareSafeEncryptionEngine128(AesSafe128Encryptor::new())
-            }
-        }
-    }
-
-    #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
-    pub fn new() -> Aes128Encryptor {
-        fail!("Not yet implemented.")
-    }
-}
-
-impl SymmetricCipher for Aes128Encryptor {
-    fn set_key(&mut self, key: &[u8]) {
-        match self.engine {
-            AesNiEncryptionEngine128(ref mut engine) => {
-                engine.set_key(key);
-            },
-            AesSoftwareSafeEncryptionEngine128(ref mut engine) => {
-                engine.set_key(key);
-            }
-        }
-    }
-}
-
-impl BlockEncryptor for Aes128Encryptor {
-    fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
-        match self.engine {
-            AesNiEncryptionEngine128(ref engine) => {
-                engine.encrypt_block(input, output);
-            },
-            AesSoftwareSafeEncryptionEngine128(ref engine) => {
-                engine.encrypt_block(input, output);
-            }
-        }
-    }
-}
-
-impl Aes128Decryptor {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
-    pub fn new() -> Aes128Decryptor {
-        if (supports_aesni()) {
-            Aes128Decryptor {
-                engine: AesNiDecryptionEngine128(AesNi128Decryptor::new())
-            }
-        } else {
-            Aes128Decryptor {
-                engine: AesSoftwareSafeDecryptionEngine128(AesSafe128Decryptor::new())
-            }
-        }
-    }
-
-    #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
-    pub fn new() -> Aes128Decryptor {
-        fail!("Not yet implemented.")
-    }
-}
-
-impl SymmetricCipher for Aes128Decryptor {
-    fn set_key(&mut self, key: &[u8]) {
-        match self.engine {
-            AesNiDecryptionEngine128(ref mut engine) => {
-                engine.set_key(key);
-            },
-            AesSoftwareSafeDecryptionEngine128(ref mut engine) => {
-                engine.set_key(key);
-            }
-        }
-    }
-}
-
-impl BlockDecryptor for Aes128Decryptor {
-    fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
-        match self.engine {
-            AesNiDecryptionEngine128(ref engine) => {
-                engine.decrypt_block(input, output);
-            },
-            AesSoftwareSafeDecryptionEngine128(ref engine) => {
-                engine.decrypt_block(input, output);
-            }
-        }
-    }
-}
-
-/*
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// AES - Default handlinger for 128 bit varient
-////////////////////////////////////////////////////////////////////////////////////////////////////
 
 enum AesEncryptionEngine192 {
     #[cfg(target_arch = "x86")]
     #[cfg(target_arch = "x86_64")]
     AesNiEncryptionEngine192(AesNi192Encryptor),
-    AesSoftwareSafeEncryptionEngine192(Aes192Encrypt)
+    AesSafeEncryptionEngine192(AesSafe192Encryptor)
 }
 
 enum AesDecryptionEngine192 {
     #[cfg(target_arch = "x86")]
     #[cfg(target_arch = "x86_64")]
     AesNiDecryptionEngine192(AesNi192Decryptor),
-    AesSoftwareSafeDecryptionEngine192(Aes192Decrypt)
+    AesSafeDecryptionEngine192(AesSafe192Decryptor)
 }
 
-struct Aes192Encryptor {
-    engine: AesEncryptionEngine192
-}
+define_struct!(Aes192Encryptor, AesEncryptionEngine192)
+define_struct!(Aes192Decryptor, AesDecryptionEngine192)
+define_impl!(
+    Aes192Encryptor,
+    AesNiEncryptionEngine192 => AesNi192Encryptor,
+    AesSafeEncryptionEngine192 => AesSafe192Encryptor)
+define_impl!(
+    Aes192Decryptor,
+    AesNiDecryptionEngine192 => AesNi192Decryptor,
+    AesSafeDecryptionEngine192 => AesSafe192Decryptor)
+define_init!(
+    Aes192Encryptor,
+    AesNiEncryptionEngine192,
+    AesSafeEncryptionEngine192)
+define_init!(
+    Aes192Decryptor,
+    AesNiDecryptionEngine192,
+    AesSafeDecryptionEngine192)
+define_enc!(
+    Aes192Encryptor,
+    AesNiEncryptionEngine192,
+    AesSafeEncryptionEngine192)
+define_dec!(
+    Aes192Decryptor,
+    AesNiDecryptionEngine192,
+    AesSafeDecryptionEngine192)
 
-struct Aes192Decryptor {
-    engine: AesDecryptionEngine192
-}
-
-impl Aes192Encryptor {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
-    pub fn new() -> Aes192Encryptor {
-        if (supports_aesni()) {
-            Aes192Encryptor {
-                engine: AesNiEncryptionEngine192(AesNi192Encryptor::new())
-            }
-        } else {
-            Aes192Encryptor {
-                engine: AesSoftwareSafeEncryptionEngine192(Aes192Encrypt::new())
-            }
-        }
-    }
-
-    #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
-    pub fn new() -> Aes192Encryptor {
-        fail!("Not yet implemented.")
-    }
-}
-
-impl SymmetricCipher192 for Aes192Encryptor {
-    fn set_key(&mut self, key: &[u8, ..24]) {
-        match self.engine {
-            AesNiEncryptionEngine192(ref mut engine) => {
-                engine.set_key(key);
-            },
-            AesSoftwareSafeEncryptionEngine192(ref mut engine) => {
-                engine.set_key(key);
-            }
-        }
-    }
-}
-
-impl BlockEncryptor128 for Aes192Encryptor {
-    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-        match self.engine {
-            AesNiEncryptionEngine192(ref engine) => {
-                return engine.encrypt_block(input);
-            },
-            AesSoftwareSafeEncryptionEngine192(ref engine) => {
-                return engine.encrypt_block(input);
-            }
-        }
-    }
-}
-
-impl Aes192Decryptor {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
-    pub fn new() -> Aes192Decryptor {
-        if (supports_aesni()) {
-            Aes192Decryptor {
-                engine: AesNiDecryptionEngine192(AesNi192Decryptor::new())
-            }
-        } else {
-            Aes192Decryptor {
-                engine: AesSoftwareSafeDecryptionEngine192(Aes192Decrypt::new())
-            }
-        }
-    }
-
-    #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
-    pub fn new() -> Aes192Decryptor {
-        fail!("Not yet implemented.")
-    }
-}
-
-impl SymmetricCipher192 for Aes192Decryptor {
-    fn set_key(&mut self, key: &[u8, ..24]) {
-        match self.engine {
-            AesNiDecryptionEngine192(ref mut engine) => {
-                engine.set_key(key);
-            },
-            AesSoftwareSafeDecryptionEngine192(ref mut engine) => {
-                engine.set_key(key);
-            }
-        }
-    }
-}
-
-impl BlockDecryptor128 for Aes192Decryptor {
-    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-        match self.engine {
-            AesNiDecryptionEngine192(ref engine) => {
-                return engine.decrypt_block(input);
-            },
-            AesSoftwareSafeDecryptionEngine192(ref engine) => {
-                return engine.decrypt_block(input);
-            }
-        }
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// AES - Default handlinger for 256 bit varient
-////////////////////////////////////////////////////////////////////////////////////////////////////
 
 enum AesEncryptionEngine256 {
     #[cfg(target_arch = "x86")]
     #[cfg(target_arch = "x86_64")]
     AesNiEncryptionEngine256(AesNi256Encryptor),
-    AesSoftwareSafeEncryptionEngine256(Aes256Encrypt)
+    AesSafeEncryptionEngine256(AesSafe256Encryptor)
 }
 
 enum AesDecryptionEngine256 {
     #[cfg(target_arch = "x86")]
     #[cfg(target_arch = "x86_64")]
     AesNiDecryptionEngine256(AesNi256Decryptor),
-    AesSoftwareSafeDecryptionEngine256(Aes256Decrypt)
+    AesSafeDecryptionEngine256(AesSafe256Decryptor)
 }
 
-struct Aes256Encryptor {
-    engine: AesEncryptionEngine256
-}
+define_struct!(Aes256Encryptor, AesEncryptionEngine256)
+define_struct!(Aes256Decryptor, AesDecryptionEngine256)
+define_impl!(
+    Aes256Encryptor,
+    AesNiEncryptionEngine256 => AesNi256Encryptor,
+    AesSafeEncryptionEngine256 => AesSafe256Encryptor)
+define_impl!(
+    Aes256Decryptor,
+    AesNiDecryptionEngine256 => AesNi256Decryptor,
+    AesSafeDecryptionEngine256 => AesSafe256Decryptor)
+define_init!(
+    Aes256Encryptor,
+    AesNiEncryptionEngine256,
+    AesSafeEncryptionEngine256)
+define_init!(
+    Aes256Decryptor,
+    AesNiDecryptionEngine256,
+    AesSafeDecryptionEngine256)
+define_enc!(
+    Aes256Encryptor,
+    AesNiEncryptionEngine256,
+    AesSafeEncryptionEngine256)
+define_dec!(
+    Aes256Decryptor,
+    AesNiDecryptionEngine256,
+    AesSafeDecryptionEngine256)
 
-struct Aes256Decryptor {
-    engine: AesDecryptionEngine256
-}
-
-impl Aes256Encryptor {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
-    pub fn new() -> Aes256Encryptor {
-        if (supports_aesni()) {
-            Aes256Encryptor {
-                engine: AesNiEncryptionEngine256(AesNi256Encryptor::new())
-            }
-        } else {
-            Aes256Encryptor {
-                engine: AesSoftwareSafeEncryptionEngine256(Aes256Encrypt::new())
-            }
-        }
-    }
-
-    #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
-    pub fn new() -> Aes256Encryptor {
-        fail!("Not yet implemented.")
-    }
-}
-
-impl SymmetricCipher256 for Aes256Encryptor {
-    fn set_key(&mut self, key: &[u8, ..32]) {
-        match self.engine {
-            AesNiEncryptionEngine256(ref mut engine) => {
-                engine.set_key(key);
-            },
-            AesSoftwareSafeEncryptionEngine256(ref mut engine) => {
-                engine.set_key(key);
-            }
-        }
-    }
-}
-
-impl BlockEncryptor128 for Aes256Encryptor {
-    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-        match self.engine {
-            AesNiEncryptionEngine256(ref engine) => {
-                return engine.encrypt_block(input);
-            },
-            AesSoftwareSafeEncryptionEngine256(ref engine) => {
-                return engine.encrypt_block(input);
-            }
-        }
-    }
-}
-
-impl Aes256Decryptor {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
-    pub fn new() -> Aes256Decryptor {
-        if (supports_aesni()) {
-            Aes256Decryptor {
-                engine: AesNiDecryptionEngine256(AesNi256Decryptor::new())
-            }
-        } else {
-            Aes256Decryptor {
-                engine: AesSoftwareSafeDecryptionEngine256(Aes256Decrypt::new())
-            }
-        }
-    }
-
-    #[cfg(not(target_arch = "x86"), not(target_arch = "x86_64"))]
-    pub fn new() -> Aes256Decryptor {
-        fail!("Not yet implemented.")
-    }
-}
-
-impl SymmetricCipher256 for Aes256Decryptor {
-    fn set_key(&mut self, key: &[u8, ..32]) {
-        match self.engine {
-            AesNiDecryptionEngine256(ref mut engine) => {
-                engine.set_key(key);
-            },
-            AesSoftwareSafeDecryptionEngine256(ref mut engine) => {
-                engine.set_key(key);
-            }
-        }
-    }
-}
-
-impl BlockDecryptor128 for Aes256Decryptor {
-    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-        match self.engine {
-            AesNiDecryptionEngine256(ref engine) => {
-                return engine.decrypt_block(input);
-            },
-            AesSoftwareSafeDecryptionEngine256(ref engine) => {
-                return engine.decrypt_block(input);
-            }
-        }
-    }
-}
-*/
 
 #[cfg(test)]
 mod test {
@@ -535,7 +399,6 @@ mod test {
         }
     }
 
-    /*
     #[test]
     fn testAesDefault192() {
         let tests = tests192();
@@ -555,7 +418,6 @@ mod test {
             run_test(&mut enc, &mut dec, t);
         }
     }
-    */
 
 
     #[cfg(target_arch = "x86")]
