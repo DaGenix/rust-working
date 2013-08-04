@@ -147,13 +147,14 @@ pub fn shift_add_check_overflow_tuple
 }
 
 
-pub trait ConstantTimeEq {
-    fn constant_time_eq(x: Self, y: Self) -> Self;
+pub trait FixedEq {
+    /// returns 1 if self == x, 0 otherwise
+    fn fixed_eq(self, x: Self) -> Self;
 }
 
-impl ConstantTimeEq for u8 {
-    fn constant_time_eq(x: u8, y: u8) -> u8 {
-        let mut z = !(x ^ y);
+impl FixedEq for u8 {
+    fn fixed_eq(self, x: u8) -> u8 {
+        let mut z = !(self ^ x);
         z &= z >> 4;
         z &= z >> 2;
         z &= z >> 1;
@@ -161,26 +162,17 @@ impl ConstantTimeEq for u8 {
     }
 }
 
-/// returns 1 if x == y, 0 otherwise
-pub fn constant_time_eq<T: ConstantTimeEq>(x: T, y: T) -> T {
-    return ConstantTimeEq::constant_time_eq(x, y);
+pub trait FixedSelect<S> {
+    /// if self is 1, returns x; if self is 0, returns y
+    fn fixed_select(self, x: S, y: S) -> S;
 }
 
-
-pub trait ConstantTimeSelect {
-    fn constant_time_select(v: Self, x: Self, y: Self) -> Self;
-}
-
-impl <T: Int> ConstantTimeSelect for T {
-    fn constant_time_select(v: T, x: T, y: T) -> T {
-        let one: T = One::one();
-        return !(v - one) & x | (v - one) & y;
+impl <T: Int, S: Int> FixedSelect<S> for T {
+    fn fixed_select(self, x: S, y: S) -> S {
+        let z = NumCast::from::<S, T>(self);
+        let one: S = One::one();
+        return !(z - one) & x | (z - one) & y;
     }
-}
-
-/// if v is 1, returns x; if v is 0, returns y
-pub fn constant_time_select<T: ConstantTimeSelect>(v: T, x: T, y: T) -> T {
-    return ConstantTimeSelect::constant_time_select(v, x, y);
 }
 
 

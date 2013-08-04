@@ -15,6 +15,332 @@ use cryptoutil::*;
 use symmetriccipher::*;
 
 
+macro_rules! define_aes_struct(
+    (
+        $name:ident,
+        $rounds:expr
+    ) => (
+        struct $name {
+            round_keys: [[u32, ..4], ..$rounds + 1],
+            initialized: bool
+        }
+    )
+)
+
+macro_rules! define_aes_impl(
+    (
+        $name:ident,
+        $mode:ident,
+        $rounds:expr,
+        $key_size:expr
+    ) => (
+        impl $name {
+            pub fn new() -> $name {
+                return $name {
+                    round_keys: [[0u32, ..4], ..$rounds + 1],
+                    initialized: false
+                };
+            }
+        }
+    )
+)
+
+macro_rules! define_aes_enc(
+    (
+        $name:ident,
+        $rounds:expr
+    ) => (
+        impl BlockEncryptor128 for $name {
+            fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
+                assert!(self.initialized);
+                return encrypt_block($rounds, input, self.round_keys);
+            }
+        }
+    )
+)
+
+macro_rules! define_aes_dec(
+    (
+        $name:ident,
+        $rounds:expr
+    ) => (
+        impl BlockDecryptor128 for $name {
+            fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
+                assert!(self.initialized);
+                return decrypt_block($rounds, input, self.round_keys);
+            }
+        }
+    )
+)
+
+macro_rules! define_aes_init(
+    (
+        $name:ident,
+        $tra:ident,
+        $keytype:ty,
+        $mode:expr
+    ) => (
+        impl $tra for $name {
+            fn set_key(&mut self, key: $keytype) {
+                setup_round_keys(*key, $mode, self.round_keys);
+                self.initialized = true;
+            }
+        }
+    )
+)
+
+define_aes_struct!(AesSafe128Encrypt, 10)
+define_aes_struct!(AesSafe128Decrypt, 10)
+define_aes_impl!(AesSafe128Encrypt, Encryption, 10, 16)
+define_aes_impl!(AesSafe128Decrypt, Decryption, 10, 16)
+define_aes_enc!(AesSafe128Encrypt, 10)
+define_aes_dec!(AesSafe128Decrypt, 10)
+define_aes_init!(AesSafe128Encrypt, SymmetricCipher128, &[u8, ..16], Encryption)
+define_aes_init!(AesSafe128Decrypt, SymmetricCipher128, &[u8, ..16], Decryption)
+
+define_aes_struct!(AesSafe192Encrypt, 12)
+define_aes_struct!(AesSafe192Decrypt, 12)
+define_aes_impl!(AesSafe192Encrypt, Encryption, 12, 24)
+define_aes_impl!(AesSafe192Decrypt, Decryption, 12, 24)
+define_aes_enc!(AesSafe192Encrypt, 12)
+define_aes_dec!(AesSafe192Decrypt, 12)
+define_aes_init!(AesSafe192Encrypt, SymmetricCipher192, &[u8, ..24], Encryption)
+define_aes_init!(AesSafe192Decrypt, SymmetricCipher192, &[u8, ..24], Decryption)
+
+define_aes_struct!(AesSafe256Encrypt, 14)
+define_aes_struct!(AesSafe256Decrypt, 14)
+define_aes_impl!(AesSafe256Encrypt, Encryption, 14, 32)
+define_aes_impl!(AesSafe256Decrypt, Decryption, 14, 32)
+define_aes_enc!(AesSafe256Encrypt, 14)
+define_aes_dec!(AesSafe256Decrypt, 14)
+define_aes_init!(AesSafe256Encrypt, SymmetricCipher256, &[u8, ..32], Encryption)
+define_aes_init!(AesSafe256Decrypt, SymmetricCipher256, &[u8, ..32], Decryption)
+
+
+/// Get the value from the specified index using a fixed number of instructions
+fn fixed_get(v: &[u8], idx: uint) -> u32 {
+    let mut out: u32 = 0;
+    for i in range(0, v.len()) {
+        out = (i as u8).fixed_eq(idx as u8).fixed_select(v[i] as u32, out);
+    }
+    return out;
+}
+
+/// Get the S value using a fixed number of instructions
+/// Only the bottom byte is used - basically the "idx" argument is a u8, but this lets us avoid
+/// some casts
+fn s(idx: u32) -> u32 {
+    return fixed_get(S, (idx & 0xff) as uint);
+}
+
+/// Get the S_INV value using a fixed number of instructions
+/// Only the bottom byte is used - basically the "idx" argument is a u8, but this lets us avoid
+/// some casts
+fn s_inv(idx: u32) -> u32 {
+    return fixed_get(S_INV, (idx & 0xff) as uint);
+}
+
+/// Get the RCON value at the specified index using a fixed number of instructions
+fn rcon(idx: uint) -> u32 {
+    return fixed_get(RCON, idx as uint);
+}
+
+fn shift(r: u32, shift: u32) -> u32 {
+    return (r >> shift) | (r << -shift);
+}
+
+fn ffmulx(x: u32) -> u32 {
+    static m1: u32 = 0x80808080;
+    static m2: u32 = 0x7f7f7f7f;
+    static m3: u32 = 0x0000001b;
+
+    return ((x & m2) << 1) ^ (((x & m1) >> 7) * m3);
+}
+
+// Mix columns step
+fn mcol(x: u32) -> u32 {
+    let f2 = ffmulx(x);
+    return f2 ^ shift(x ^ f2, 8) ^ shift(x, 16) ^ shift(x, 24);
+}
+
+// The inverse mix columns step
+fn inv_mcol(x: u32) -> u32 {
+    let f2 = ffmulx(x);
+    let f4 = ffmulx(f2);
+    let f8 = ffmulx(f4);
+    let f9 = x ^ f8;
+
+    return f2 ^ f4 ^ f8 ^ shift(f2 ^ f9, 8) ^ shift(f4 ^ f9, 16) ^ shift(f9, 24);
+}
+
+fn sub_word(x: u32) -> u32 {
+    return s(x) | (s(x >> 8) << 8) | (s(x >> 16) << 16) | (s(x >> 24) << 24);
+}
+
+enum KeyType {
+    Encryption,
+    Decryption
+}
+
+fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]) {
+    let (key_words, rounds) = match key.len() {
+        16 => (4, 10u),
+        24 => (6, 12u),
+        32 => (8, 14u),
+        _ => fail!("Invalid AES key size.")
+    };
+
+    // They key becomes the first few round keys - just copy it directly
+    let mut j = 0;
+    do uint::range_step(0, key.len(), 4) |i| {
+        round_keys[j / 4][j & 3] =
+            (key[i] as u32) |
+            ((key[i+1] as u32) << 8) |
+            ((key[i+2] as u32) << 16) |
+            ((key[i+3] as u32) << 24);
+        j += 1;
+        true
+    };
+
+    // Calculate the rest of the round keys
+    for i in range(key_words, (rounds + 1) * 4) {
+        let mut temp = round_keys[(i - 1) / 4][(i - 1) & 3];
+        if (i % key_words) == 0 {
+            temp = sub_word(shift(temp, 8)) ^ rcon((i / key_words) - 1);
+        } else if (key_words > 6) && ((i % key_words) == 4) {
+            temp = sub_word(temp);
+        }
+        round_keys[i / 4][i & 3] = round_keys[(i - key_words) / 4][(i - key_words) & 3] ^ temp;
+    }
+
+    // Decryption round keys require extra processing
+    match key_type {
+        Decryption => {
+            for j in range(1, rounds) {
+                for i in range(0, 4) {
+                    round_keys[j][i] = inv_mcol(round_keys[j][i]);
+                }
+            }
+        },
+        Encryption => { }
+    }
+}
+
+fn encrypt_block(rounds: uint, input: &[u8, ..16], rk: &[[u32, ..4]]) -> [u8, ..16] {
+    fn op(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
+        return mcol(s(v) ^ (s(x >> 8) << 8) ^ (s(y >> 16) << 16) ^ (s(z >> 24) <<24)) ^ k;
+    }
+
+    fn op_end(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
+        return s(v) ^ (s(x >> 8) << 8) ^ (s(y >> 16) << 16) ^ (s(z >> 24) <<24) ^ k;
+    }
+
+    let mut r0: u32;
+    let mut r1: u32;
+    let mut r2: u32;
+    let mut r3: u32;
+
+    let mut c = [0u32, ..4];
+    read_u32v_le(c, *input);
+
+    c[0] ^= rk[0][0];
+    c[1] ^= rk[0][1];
+    c[2] ^= rk[0][2];
+    c[3] ^= rk[0][3];
+
+    let mut r = 1;
+    while (r < rounds - 1) {
+        r0 = op(c[0], c[1], c[2], c[3], rk[r][0]);
+        r1 = op(c[1], c[2], c[3], c[0], rk[r][1]);
+        r2 = op(c[2], c[3], c[0], c[1], rk[r][2]);
+        r3 = op(c[3], c[0], c[1], c[2], rk[r][3]);
+        r += 1;
+
+        c[0] = op(r0, r1, r2, r3, rk[r][0]);
+        c[1] = op(r1, r2, r3, r0, rk[r][1]);
+        c[2] = op(r2, r3, r0, r1, rk[r][2]);
+        c[3] = op(r3, r0, r1, r2, rk[r][3]);
+        r += 1;
+    }
+
+    r0 = op(c[0], c[1], c[2], c[3], rk[r][0]);
+    r1 = op(c[1], c[2], c[3], c[0], rk[r][1]);
+    r2 = op(c[2], c[3], c[0], c[1], rk[r][2]);
+    r3 = op(c[3], c[0], c[1], c[2], rk[r][3]);
+    r += 1;
+
+    c[0] = op_end(r0, r1, r2, r3, rk[r][0]);
+    c[1] = op_end(r1, r2, r3, r0, rk[r][1]);
+    c[2] = op_end(r2, r3, r0, r1, rk[r][2]);
+    c[3] = op_end(r3, r0, r1, r2, rk[r][3]);
+
+    let mut out = [0u8, ..16];
+    write_u32_le(out.mut_slice(0, 4), c[0]);
+    write_u32_le(out.mut_slice(4, 8), c[1]);
+    write_u32_le(out.mut_slice(8, 12), c[2]);
+    write_u32_le(out.mut_slice(12, 16), c[3]);
+
+    return out;
+}
+
+fn decrypt_block(rounds: uint, input: &[u8, ..16], rk: &[[u32, ..4]]) -> [u8, ..16] {
+    fn op(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
+        return inv_mcol(s_inv(v) ^ (s_inv(x >> 8) << 8) ^ (s_inv(y >> 16) << 16) ^
+            (s_inv(z >> 24) <<24)) ^ k;
+    }
+
+    fn op_end(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
+        return s_inv(v) ^ (s_inv(x >> 8) << 8) ^ (s_inv(y >> 16) << 16) ^ (s_inv(z >> 24) <<24) ^ k;
+    }
+
+    let mut r0: u32;
+    let mut r1: u32;
+    let mut r2: u32;
+    let mut r3: u32;
+
+    let mut c = [0u32, ..4];
+    read_u32v_le(c, *input);
+
+    c[0] ^= rk[rounds][0];
+    c[1] ^= rk[rounds][1];
+    c[2] ^= rk[rounds][2];
+    c[3] ^= rk[rounds][3];
+
+    let mut r = rounds - 1;
+    while (r > 1) {
+        r0 = op(c[0], c[3], c[2], c[1], rk[r][0]);
+        r1 = op(c[1], c[0], c[3], c[2], rk[r][1]);
+        r2 = op(c[2], c[1], c[0], c[3], rk[r][2]);
+        r3 = op(c[3], c[2], c[1], c[0], rk[r][3]);
+        r -= 1;
+
+        c[0] = op(r0, r3, r2, r1, rk[r][0]);
+        c[1] = op(r1, r0, r3, r2, rk[r][1]);
+        c[2] = op(r2, r1, r0, r3, rk[r][2]);
+        c[3] = op(r3, r2, r1, r0, rk[r][3]);
+        r -= 1;
+    }
+
+    r0 = op(c[0], c[3], c[2], c[1], rk[r][0]);
+    r1 = op(c[1], c[0], c[3], c[2], rk[r][1]);
+    r2 = op(c[2], c[1], c[0], c[3], rk[r][2]);
+    r3 = op(c[3], c[2], c[1], c[0], rk[r][3]);
+    r -= 1;
+
+    c[0] = op_end(r0, r3, r2, r1, rk[r][0]);
+    c[1] = op_end(r1, r0, r3, r2, rk[r][1]);
+    c[2] = op_end(r2, r1, r0, r3, rk[r][2]);
+    c[3] = op_end(r3, r2, r1, r0, rk[r][3]);
+
+    let mut out = [0u8, ..16];
+    write_u32_le(out.mut_slice(0, 4), c[0]);
+    write_u32_le(out.mut_slice(4, 8), c[1]);
+    write_u32_le(out.mut_slice(8, 12), c[2]);
+    write_u32_le(out.mut_slice(12, 16), c[3]);
+
+    return out;
+}
+
 static S: [u8, ..256] = [
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5,
     0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
@@ -85,342 +411,9 @@ static S_INV: [u8, ..256] = [
     0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D
 ];
 
-/// Get the S_BOX value in constant time
-pub fn calc_s(input: u32) -> u32 {
-    let mut out: u32 = 0;
-    for i in range(0, 256) {
-        out = constant_time_select(constant_time_eq(i as u8, input as u8), S[i], out as u8) as u32;
-    }
-    return out;
-}
-
-/// Get the S_INV_BOX value in constant time
-pub fn calc_s_inv(input: u32) -> u32 {
-    let mut out: u32 = 0;
-    for i in range(0, 256) {
-        out = constant_time_select(constant_time_eq(i as u8, input as u8), S_INV[i], out as u8) as u32;
-    }
-    return out;
-}
-
-
-macro_rules! define_aes_struct(
-    (
-        $name:ident,
-        $rounds:expr
-    ) => (
-        struct $name {
-            working_key: [[u32, ..4], ..$rounds + 1],
-            initialized: bool
-        }
-    )
-)
-
-macro_rules! define_aes_impl(
-    (
-        $name:ident,
-        $mode:ident,
-        $rounds:expr,
-        $key_size:expr
-    ) => (
-        impl $name {
-            pub fn new() -> $name {
-                return $name {
-                    working_key: [[0u32, ..4], ..$rounds + 1],
-                    initialized: false
-                };
-            }
-        }
-    )
-)
-
-macro_rules! define_aes_enc(
-    (
-        $name:ident,
-        $rounds:expr
-    ) => (
-        impl BlockEncryptor128 for $name {
-            fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-                assert!(self.initialized);
-                return encrypt_block($rounds, input, self.working_key);
-            }
-        }
-    )
-)
-
-macro_rules! define_aes_dec(
-    (
-        $name:ident,
-        $rounds:expr
-    ) => (
-        impl BlockDecryptor128 for $name {
-            fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-                assert!(self.initialized);
-                return decrypt_block($rounds, input, self.working_key);
-            }
-        }
-    )
-)
-
-macro_rules! define_aes_init(
-    (
-        $name:ident,
-        $tra:ident,
-        $keytype:ty,
-        $mode:expr,
-        $rounds:expr
-    ) => (
-        impl $tra for $name {
-            fn set_key(&mut self, key: $keytype) {
-                setup_working_key(*key, $rounds, $mode, self.working_key);
-                self.initialized = true;
-            }
-        }
-    )
-)
-
-define_aes_struct!(AesSafe128Encrypt, 10)
-define_aes_struct!(AesSafe128Decrypt, 10)
-define_aes_impl!(AesSafe128Encrypt, Encryption, 10, 16)
-define_aes_impl!(AesSafe128Decrypt, Decryption, 10, 16)
-define_aes_enc!(AesSafe128Encrypt, 10)
-define_aes_dec!(AesSafe128Decrypt, 10)
-define_aes_init!(AesSafe128Encrypt, SymmetricCipher128, &[u8, ..16], Encryption, 10)
-define_aes_init!(AesSafe128Decrypt, SymmetricCipher128, &[u8, ..16], Decryption, 10)
-
-define_aes_struct!(AesSafe192Encrypt, 12)
-define_aes_struct!(AesSafe192Decrypt, 12)
-define_aes_impl!(AesSafe192Encrypt, Encryption, 12, 24)
-define_aes_impl!(AesSafe192Decrypt, Decryption, 12, 24)
-define_aes_enc!(AesSafe192Encrypt, 12)
-define_aes_dec!(AesSafe192Decrypt, 12)
-define_aes_init!(AesSafe192Encrypt, SymmetricCipher192, &[u8, ..24], Encryption, 12)
-define_aes_init!(AesSafe192Decrypt, SymmetricCipher192, &[u8, ..24], Decryption, 12)
-
-define_aes_struct!(AesSafe256Encrypt, 14)
-define_aes_struct!(AesSafe256Decrypt, 14)
-define_aes_impl!(AesSafe256Encrypt, Encryption, 14, 32)
-define_aes_impl!(AesSafe256Decrypt, Decryption, 14, 32)
-define_aes_enc!(AesSafe256Encrypt, 14)
-define_aes_dec!(AesSafe256Decrypt, 14)
-define_aes_init!(AesSafe256Encrypt, SymmetricCipher256, &[u8, ..32], Encryption, 14)
-define_aes_init!(AesSafe256Decrypt, SymmetricCipher256, &[u8, ..32], Decryption, 14)
-
-
-fn shift(r: u32, shift: u32) -> u32 {
-    return (r >> shift) | (r << -shift);
-}
-
-// multiply four bytes in GF(2^8) by 'x' {02} in parallel
-fn ffmulx(x: u32) -> u32 {
-    static m1: u32 = 0x80808080;
-    static m2: u32 = 0x7f7f7f7f;
-    static m3: u32 = 0x0000001b;
-
-    return ((x & m2) << 1) ^ (((x & m1) >> 7) * m3);
-}
-
-fn mcol(x: u32) -> u32 {
-    let f2 = ffmulx(x);
-    return f2 ^ shift(x ^ f2, 8) ^ shift(x, 16) ^ shift(x, 24);
-}
-
-fn inv_mcol(x: u32) -> u32 {
-    let f2 = ffmulx(x);
-    let f4 = ffmulx(f2);
-    let f8 = ffmulx(f4);
-    let f9 = x ^ f8;
-
-    return f2 ^ f4 ^ f8 ^ shift(f2 ^ f9, 8) ^ shift(f4 ^ f9, 16) ^ shift(f9, 24);
-}
-
-fn sub_word(x: u32) -> u32 {
-    return
-        calc_s(x&255) |
-        (calc_s((x >> 8)&255) << 8) |
-        (calc_s((x >> 16)&255) << 16) |
-        (calc_s((x >> 24)&255) << 24);
-}
-
-enum KeyType {
-    Encryption,
-    Decryption
-}
-
-// TODO: Yikes - get rid of this
-static RCON: [u32, ..30] = [
+static RCON: [u8, ..30] = [
     0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
     0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f,
     0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4,
     0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91
 ];
-
-fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, W: &mut [[u32, ..4]]) {
-    assert!(key.len() == 16 || key.len() == 24 || key.len() == 32);
-
-    let KC = key.len() / 4;
-
-    let mut t = 0;
-    do uint::range_step(0, key.len(), 4) |i| {
-        W[t >> 2][t & 3] =
-            (key[i] as u32) |
-            ((key[i+1] as u32) << 8) |
-            ((key[i+2] as u32) << 16) |
-            ((key[i+3] as u32) << 24);
-        t += 1;
-        true
-    };
-
-    let k = (rounds + 1) << 2;
-    for i in range(KC, k) {
-        let mut temp = W[(i - 1) >> 2][(i - 1) & 3];
-        if ((i % KC) == 0) {
-            temp = sub_word(shift(temp, 8)) ^ RCON[(i / KC) - 1];
-        } else if ((KC > 6) && ((i % KC) == 4)) {
-            temp = sub_word(temp);
-        }
-
-        W[i >> 2][i & 3] = W[(i - KC) >> 2][(i - KC) & 3] ^ temp;
-    }
-
-    match key_type {
-        Decryption => {
-            for j in range(1, rounds) {
-                for i in range(0, 4) {
-                    W[j][i] = inv_mcol(W[j][i]);
-                }
-            }
-        },
-        Encryption => { }
-    }
-}
-
-
-fn encrypt_block(rounds: uint, input: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..16] {
-    let mut r0: u32;
-    let mut r1: u32;
-    let mut r2: u32;
-    let mut r3: u32;
-
-    let mut c = [0u32, ..4];
-    read_u32v_le(c, *input);
-
-    c[0] ^= KW[0][0];
-    c[1] ^= KW[0][1];
-    c[2] ^= KW[0][2];
-    c[3] ^= KW[0][3];
-
-    let mut r = 1;
-    while (r < rounds - 1) {
-        r0 = mcol((calc_s(c[0]&255)&255) ^ ((calc_s((c[1]>>8)&255)&255)<<8) ^
-            ((calc_s((c[2]>>16)&255)&255)<<16) ^ (calc_s((c[3]>>24)&255)<<24)) ^ KW[r][0];
-        r1 = mcol((calc_s(c[1]&255)&255) ^ ((calc_s((c[2]>>8)&255)&255)<<8) ^
-            ((calc_s((c[3]>>16)&255)&255)<<16) ^ (calc_s((c[0]>>24)&255)<<24)) ^ KW[r][1];
-        r2 = mcol((calc_s(c[2]&255)&255) ^ ((calc_s((c[3]>>8)&255)&255)<<8) ^
-            ((calc_s((c[0]>>16)&255)&255)<<16) ^ (calc_s((c[1]>>24)&255)<<24)) ^ KW[r][2];
-        r3 = mcol((calc_s(c[3]&255)&255) ^ ((calc_s((c[0]>>8)&255)&255)<<8) ^
-            ((calc_s((c[1]>>16)&255)&255)<<16) ^ (calc_s((c[2]>>24)&255)<<24)) ^ KW[r][3];
-        r += 1;
-
-        c[0] = mcol((calc_s(r0&255)&255) ^ ((calc_s((r1>>8)&255)&255)<<8) ^
-            ((calc_s((r2>>16)&255)&255)<<16) ^ (calc_s((r3>>24)&255)<<24)) ^ KW[r][0];
-        c[1] = mcol((calc_s(r1&255)&255) ^ ((calc_s((r2>>8)&255)&255)<<8) ^
-            ((calc_s((r3>>16)&255)&255)<<16) ^ (calc_s((r0>>24)&255)<<24)) ^ KW[r][1];
-        c[2] = mcol((calc_s(r2&255)&255) ^ ((calc_s((r3>>8)&255)&255)<<8) ^
-            ((calc_s((r0>>16)&255)&255)<<16) ^ (calc_s((r1>>24)&255)<<24)) ^ KW[r][2];
-        c[3] = mcol((calc_s(r3&255)&255) ^ ((calc_s((r0>>8)&255)&255)<<8) ^
-            ((calc_s((r1>>16)&255)&255)<<16) ^ (calc_s((r2>>24)&255)<<24)) ^ KW[r][3];
-        r += 1;
-    }
-
-    r0 = mcol((calc_s(c[0]&255)&255) ^ ((calc_s((c[1]>>8)&255)&255)<<8) ^
-        ((calc_s((c[2]>>16)&255)&255)<<16) ^ (calc_s((c[3]>>24)&255)<<24)) ^ KW[r][0];
-    r1 = mcol((calc_s(c[1]&255)&255) ^ ((calc_s((c[2]>>8)&255)&255)<<8) ^
-        ((calc_s((c[3]>>16)&255)&255)<<16) ^ (calc_s((c[0]>>24)&255)<<24)) ^ KW[r][1];
-    r2 = mcol((calc_s(c[2]&255)&255) ^ ((calc_s((c[3]>>8)&255)&255)<<8) ^
-        ((calc_s((c[0]>>16)&255)&255)<<16) ^ (calc_s((c[1]>>24)&255)<<24)) ^ KW[r][2];
-    r3 = mcol((calc_s(c[3]&255)&255) ^ ((calc_s((c[0]>>8)&255)&255)<<8) ^
-        ((calc_s((c[1]>>16)&255)&255)<<16) ^ (calc_s((c[2]>>24)&255)<<24)) ^ KW[r][3];
-    r += 1;
-
-    c[0] = (calc_s(r0&255)&255) ^ ((calc_s((r1>>8)&255)&255)<<8) ^
-        ((calc_s((r2>>16)&255)&255)<<16) ^ (calc_s((r3>>24)&255)<<24) ^ KW[r][0];
-    c[1] = (calc_s(r1&255)&255) ^ ((calc_s((r2>>8)&255)&255)<<8) ^
-        ((calc_s((r3>>16)&255)&255)<<16) ^ (calc_s((r0>>24)&255)<<24) ^ KW[r][1];
-    c[2] = (calc_s(r2&255)&255) ^ ((calc_s((r3>>8)&255)&255)<<8) ^
-        ((calc_s((r0>>16)&255)&255)<<16) ^ (calc_s((r1>>24)&255)<<24) ^ KW[r][2];
-    c[3] = (calc_s(r3&255)&255) ^ ((calc_s((r0>>8)&255)&255)<<8) ^
-        ((calc_s((r1>>16)&255)&255)<<16) ^ (calc_s((r2>>24)&255)<<24) ^ KW[r][3];
-
-    let mut out = [0u8, ..16];
-    write_u32_le(out.mut_slice(0, 4), c[0]);
-    write_u32_le(out.mut_slice(4, 8), c[1]);
-    write_u32_le(out.mut_slice(8, 12), c[2]);
-    write_u32_le(out.mut_slice(12, 16), c[3]);
-
-    return out;
-}
-
-fn decrypt_block(rounds: uint, input: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..16] {
-    let mut r0: u32;
-    let mut r1: u32;
-    let mut r2: u32;
-    let mut r3: u32;
-
-    let mut c = [0u32, ..4];
-    read_u32v_le(c, *input);
-
-    c[0] ^= KW[rounds][0];
-    c[1] ^= KW[rounds][1];
-    c[2] ^= KW[rounds][2];
-    c[3] ^= KW[rounds][3];
-
-    let mut r = rounds - 1;
-    while (r > 1) {
-        r0 = inv_mcol((calc_s_inv(c[0]&255)&255) ^ ((calc_s_inv((c[3]>>8)&255)&255)<<8) ^
-            ((calc_s_inv((c[2]>>16)&255)&255)<<16) ^ (calc_s_inv((c[1]>>24)&255)<<24)) ^ KW[r][0];
-        r1 = inv_mcol((calc_s_inv(c[1]&255)&255) ^ ((calc_s_inv((c[0]>>8)&255)&255)<<8) ^
-            ((calc_s_inv((c[3]>>16)&255)&255)<<16) ^ (calc_s_inv((c[2]>>24)&255)<<24)) ^ KW[r][1];
-        r2 = inv_mcol((calc_s_inv(c[2]&255)&255) ^ ((calc_s_inv((c[1]>>8)&255)&255)<<8) ^
-            ((calc_s_inv((c[0]>>16)&255)&255)<<16) ^ (calc_s_inv((c[3]>>24)&255)<<24)) ^ KW[r][2];
-        r3 = inv_mcol((calc_s_inv(c[3]&255)&255) ^ ((calc_s_inv((c[2]>>8)&255)&255)<<8) ^
-            ((calc_s_inv((c[1]>>16)&255)&255)<<16) ^ (calc_s_inv((c[0]>>24)&255)<<24)) ^ KW[r][3];
-        r -= 1;
-
-        c[0] = inv_mcol((calc_s_inv(r0&255)&255) ^ ((calc_s_inv((r3>>8)&255)&255)<<8) ^
-            ((calc_s_inv((r2>>16)&255)&255)<<16) ^ (calc_s_inv((r1>>24)&255)<<24)) ^ KW[r][0];
-        c[1] = inv_mcol((calc_s_inv(r1&255)&255) ^ ((calc_s_inv((r0>>8)&255)&255)<<8) ^
-            ((calc_s_inv((r3>>16)&255)&255)<<16) ^ (calc_s_inv((r2>>24)&255)<<24)) ^ KW[r][1];
-        c[2] = inv_mcol((calc_s_inv(r2&255)&255) ^ ((calc_s_inv((r1>>8)&255)&255)<<8) ^
-            ((calc_s_inv((r0>>16)&255)&255)<<16) ^ (calc_s_inv((r3>>24)&255)<<24)) ^ KW[r][2];
-        c[3] = inv_mcol((calc_s_inv(r3&255)&255) ^ ((calc_s_inv((r2>>8)&255)&255)<<8) ^
-            ((calc_s_inv((r1>>16)&255)&255)<<16) ^ (calc_s_inv((r0>>24)&255)<<24)) ^ KW[r][3];
-        r -= 1;
-    }
-
-    r0 = inv_mcol((calc_s_inv(c[0]&255)&255) ^ ((calc_s_inv((c[3]>>8)&255)&255)<<8) ^
-        ((calc_s_inv((c[2]>>16)&255)&255)<<16) ^ (calc_s_inv((c[1]>>24)&255)<<24)) ^ KW[r][0];
-    r1 = inv_mcol((calc_s_inv(c[1]&255)&255) ^ ((calc_s_inv((c[0]>>8)&255)&255)<<8) ^
-        ((calc_s_inv((c[3]>>16)&255)&255)<<16) ^ (calc_s_inv((c[2]>>24)&255)<<24)) ^ KW[r][1];
-    r2 = inv_mcol((calc_s_inv(c[2]&255)&255) ^ ((calc_s_inv((c[1]>>8)&255)&255)<<8) ^
-        ((calc_s_inv((c[0]>>16)&255)&255)<<16) ^ (calc_s_inv((c[3]>>24)&255)<<24)) ^ KW[r][2];
-    r3 = inv_mcol((calc_s_inv(c[3]&255)&255) ^ ((calc_s_inv((c[2]>>8)&255)&255)<<8) ^
-        ((calc_s_inv((c[1]>>16)&255)&255)<<16) ^ (calc_s_inv((c[0]>>24)&255)<<24)) ^ KW[r][3];
-
-    c[0] = (calc_s_inv(r0&255)&255) ^ ((calc_s_inv((r3>>8)&255)&255)<<8) ^
-        ((calc_s_inv((r2>>16)&255)&255)<<16) ^ (calc_s_inv((r1>>24)&255)<<24) ^ KW[0][0];
-    c[1] = (calc_s_inv(r1&255)&255) ^ ((calc_s_inv((r0>>8)&255)&255)<<8) ^
-        ((calc_s_inv((r3>>16)&255)&255)<<16) ^ (calc_s_inv((r2>>24)&255)<<24) ^ KW[0][1];
-    c[2] = (calc_s_inv(r2&255)&255) ^ ((calc_s_inv((r1>>8)&255)&255)<<8) ^
-        ((calc_s_inv((r0>>16)&255)&255)<<16) ^ (calc_s_inv((r3>>24)&255)<<24) ^ KW[0][2];
-    c[3] = (calc_s_inv(r3&255)&255) ^ ((calc_s_inv((r2>>8)&255)&255)<<8) ^
-        ((calc_s_inv((r1>>16)&255)&255)<<16) ^ (calc_s_inv((r0>>24)&255)<<24) ^ KW[0][3];
-
-    let mut out = [0u8, ..16];
-    write_u32_le(out.mut_slice(0, 4), c[0]);
-    write_u32_le(out.mut_slice(4, 8), c[1]);
-    write_u32_le(out.mut_slice(8, 12), c[2]);
-    write_u32_le(out.mut_slice(12, 16), c[3]);
-
-    return out;
-}
