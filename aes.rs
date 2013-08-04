@@ -1,4 +1,4 @@
-// Copyright 2012-2013 The Rust Project Developers. See the COPYRIGHT
+// C/pyright 2012-2013 The Rust Pr ject Developers. See the COPYRIGHT
 // file at the top-level directory of this distribution and at
 // http://rust-lang.org/COPYRIGHT.
 //
@@ -411,7 +411,7 @@ mod test {
     fn to_hex(rr: &[u8]) -> ~str {
         use std::uint;
         let mut s = ~"";
-        for rr.iter().advance() |b| {
+        for b in rr.iter() {
             let hex = uint::to_str_radix(*b as uint, 16u);
             if hex.len() == 1 {
                 s.push_char('0');
@@ -530,7 +530,7 @@ mod test {
             test: &Test128) {
         enc.set_key(&test.key);
         dec.set_key(&test.key);
-        for test.data.iter().advance() |data| {
+        for data in test.data.iter() {
             let tmp = enc.encrypt_block(&data.plain);
             assert!(tmp == data.cipher);
             let tmp = dec.decrypt_block(&data.cipher);
@@ -546,7 +546,7 @@ mod test {
             test: &Test192) {
         enc.set_key(&test.key);
         dec.set_key(&test.key);
-        for test.data.iter().advance() |data| {
+        for data in test.data.iter() {
             let tmp = enc.encrypt_block(&data.plain);
             assert!(tmp == data.cipher);
             let tmp = dec.decrypt_block(&data.cipher);
@@ -562,7 +562,7 @@ mod test {
             test: &Test256) {
         enc.set_key(&test.key);
         dec.set_key(&test.key);
-        for test.data.iter().advance() |data| {
+        for data in test.data.iter() {
             let tmp = enc.encrypt_block(&data.plain);
             assert!(tmp == data.cipher);
             let tmp = dec.decrypt_block(&data.cipher);
@@ -572,7 +572,7 @@ mod test {
 
     #[test]
     fn testAesDefault128() {
-        for tests128.iter().advance() |t| {
+        for t in tests128.iter() {
             let mut enc = Aes128Encryptor::new();
             let mut dec = Aes128Decryptor::new();
             run_test128(&mut enc, &mut dec, t);
@@ -581,7 +581,7 @@ mod test {
 
     #[test]
     fn testAesDefault192() {
-        for tests192.iter().advance() |t| {
+        for t in tests192.iter() {
             let mut enc = Aes192Encryptor::new();
             let mut dec = Aes192Decryptor::new();
             run_test192(&mut enc, &mut dec, t);
@@ -590,7 +590,7 @@ mod test {
 
     #[test]
     fn testAesDefault256() {
-        for tests256.iter().advance() |t| {
+        for t in tests256.iter() {
             let mut enc = Aes256Encryptor::new();
             let mut dec = Aes256Decryptor::new();
             run_test256(&mut enc, &mut dec, t);
@@ -602,7 +602,7 @@ mod test {
     #[test]
     fn testAesNi128() {
         if (supports_aesni()) {
-            for tests128.iter().advance() |t| {
+            for t in tests128.iter() {
                 let mut enc = AesNi128Encryptor::new();
                 let mut dec = AesNi128Decryptor::new();
                 run_test128(&mut enc, &mut dec, t);
@@ -615,7 +615,7 @@ mod test {
     #[test]
     fn testAesNi192() {
         if (supports_aesni()) {
-            for tests192.iter().advance() |t| {
+            for t in tests192.iter() {
                 let mut enc = AesNi192Encryptor::new();
                 let mut dec = AesNi192Decryptor::new();
                 run_test192(&mut enc, &mut dec, t);
@@ -628,7 +628,7 @@ mod test {
     #[test]
     fn testAesNi256() {
         if (supports_aesni()) {
-            for tests256.iter().advance() |t| {
+            for t in tests256.iter() {
                 let mut enc = AesNi256Encryptor::new();
                 let mut dec = AesNi256Decryptor::new();
                 run_test256(&mut enc, &mut dec, t);
@@ -638,7 +638,7 @@ mod test {
 
     #[test]
     fn testAesDangerous128() {
-        for tests128.iter().advance() |t| {
+        for t in tests128.iter() {
             let mut enc = Aes128Encrypt::new();
             let mut dec = Aes128Decrypt::new();
             run_test128(&mut enc, &mut dec, t);
@@ -647,7 +647,7 @@ mod test {
 
     #[test]
     fn testAesDangerous192() {
-        for tests192.iter().advance() |t| {
+        for t in tests192.iter() {
             let mut enc = Aes192Encrypt::new();
             let mut dec = Aes192Decrypt::new();
             run_test192(&mut enc, &mut dec, t);
@@ -656,7 +656,7 @@ mod test {
 
     #[test]
     fn testAesDangerous256() {
-        for tests256.iter().advance() |t| {
+        for t in tests256.iter() {
             let mut enc = Aes256Encrypt::new();
             let mut dec = Aes256Decrypt::new();
             run_test256(&mut enc, &mut dec, t);
@@ -665,7 +665,7 @@ mod test {
 
     #[test]
     fn testAesSafe128() {
-        for tests128.iter().advance() |t| {
+        for t in tests128.iter() {
             let mut enc = AesSafe128Encrypt::new();
             let mut dec = AesSafe128Decrypt::new();
             run_test128(&mut enc, &mut dec, t);
@@ -674,7 +674,7 @@ mod test {
 
     #[test]
     fn testAesSafe192() {
-        for tests192.iter().advance() |t| {
+        for t in tests192.iter() {
             let mut enc = AesSafe192Encrypt::new();
             let mut dec = AesSafe192Decrypt::new();
             run_test192(&mut enc, &mut dec, t);
@@ -683,7 +683,7 @@ mod test {
 
     #[test]
     fn testAesSafe256() {
-        for tests256.iter().advance() |t| {
+        for t in tests256.iter() {
             let mut enc = AesSafe256Encrypt::new();
             let mut dec = AesSafe256Decrypt::new();
             run_test256(&mut enc, &mut dec, t);

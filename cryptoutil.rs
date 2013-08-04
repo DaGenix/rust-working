@@ -147,6 +147,43 @@ pub fn shift_add_check_overflow_tuple
 }
 
 
+pub trait ConstantTimeEq {
+    fn constant_time_eq(x: Self, y: Self) -> Self;
+}
+
+impl ConstantTimeEq for u8 {
+    fn constant_time_eq(x: u8, y: u8) -> u8 {
+        let mut z = !(x ^ y);
+        z &= z >> 4;
+        z &= z >> 2;
+        z &= z >> 1;
+        return z;
+    }
+}
+
+/// returns 1 if x == y, 0 otherwise
+pub fn constant_time_eq<T: ConstantTimeEq>(x: T, y: T) -> T {
+    return ConstantTimeEq::constant_time_eq(x, y);
+}
+
+
+pub trait ConstantTimeSelect {
+    fn constant_time_select(v: Self, x: Self, y: Self) -> Self;
+}
+
+impl <T: Int> ConstantTimeSelect for T {
+    fn constant_time_select(v: T, x: T, y: T) -> T {
+        let one: T = One::one();
+        return !(v - one) & x | (v - one) & y;
+    }
+}
+
+/// if v is 1, returns x; if v is 0, returns y
+pub fn constant_time_select<T: ConstantTimeSelect>(v: T, x: T, y: T) -> T {
+    return ConstantTimeSelect::constant_time_select(v, x, y);
+}
+
+
 /// A FixedBuffer, likes its name implies, is a fixed size buffer. When the buffer becomes full, it
 /// must be processed. The input() method takes care of processing and then clearing the buffer
 /// automatically. However, other methods do not and require the caller to process the buffer. Any

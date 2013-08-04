@@ -241,7 +241,7 @@ fn setup_working_key_aesni_128(key: &[u8, ..16], key_type: KeyType) -> [u8, ..16
             Encryption => { /* nothing more to do */ }
             Decryption => {
                 // range of rounds keys from #1 to #9; skip the first and last key
-                for uint::range(1, 10) |i| {
+                for i in range(1u, 10) {
                     aesimc(kw.unsafe_ref(16 * i));
                 }
             }
@@ -342,9 +342,10 @@ fn setup_working_key_aesni_192(key: &[u8, ..24], key_type: KeyType) -> [u8, ..16
             Encryption => { /* nothing more to do */ }
             Decryption => {
                 // range of rounds keys from #1 to #11; skip the first and last key
-                for uint::range(1, 12) |i| {
+                do uint::range(1, 12) |i| {
                     aesimc(kw.unsafe_ref(16 * i));
-                }
+                    true
+                };
             }
         }
     }

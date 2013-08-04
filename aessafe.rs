@@ -15,20 +15,6 @@ use cryptoutil::*;
 use symmetriccipher::*;
 
 
-/// returns 1 if x == y, 0 otherwise
-fn constant_time_eq(x: u8, y: u8) -> u8 {
-    let mut z = !(x ^ y);
-    z &= z >> 4;
-    z &= z >> 2;
-    z &= z >> 1;
-    return z;
-}
-
-/// if v is 1, returns x; if v is 0, returns y
-fn constant_time_select(v: u8, x: u8, y: u8) -> u8 {
-    return !(v - 1) & x | (v - 1) & y;
-}
-
 static S: [u8, ..256] = [
     0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5,
     0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
@@ -102,7 +88,7 @@ static S_INV: [u8, ..256] = [
 /// Get the S_BOX value in constant time
 pub fn calc_s(input: u32) -> u32 {
     let mut out: u32 = 0;
-    for u32::range(0, 256) |i| {
+    for i in range(0, 256) {
         out = constant_time_select(constant_time_eq(i as u8, input as u8), S[i], out as u8) as u32;
     }
     return out;
@@ -111,7 +97,7 @@ pub fn calc_s(input: u32) -> u32 {
 /// Get the S_INV_BOX value in constant time
 pub fn calc_s_inv(input: u32) -> u32 {
     let mut out: u32 = 0;
-    for u32::range(0, 256) |i| {
+    for i in range(0, 256) {
         out = constant_time_select(constant_time_eq(i as u8, input as u8), S_INV[i], out as u8) as u32;
     }
     return out;
@@ -275,17 +261,18 @@ fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, W: &mut [[u32,
     let KC = key.len() / 4;
 
     let mut t = 0;
-    for uint::range_step(0, key.len(), 4) |i| {
+    do uint::range_step(0, key.len(), 4) |i| {
         W[t >> 2][t & 3] =
             (key[i] as u32) |
             ((key[i+1] as u32) << 8) |
             ((key[i+2] as u32) << 16) |
             ((key[i+3] as u32) << 24);
         t += 1;
-    }
+        true
+    };
 
     let k = (rounds + 1) << 2;
-    for uint::range(KC, k) |i| {
+    for i in range(KC, k) {
         let mut temp = W[(i - 1) >> 2][(i - 1) & 3];
         if ((i % KC) == 0) {
             temp = sub_word(shift(temp, 8)) ^ RCON[(i / KC) - 1];
@@ -298,8 +285,8 @@ fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, W: &mut [[u32,
 
     match key_type {
         Decryption => {
-            for uint::range(1, rounds) |j| {
-                for uint::range(0, 4) |i| {
+            for j in range(1, rounds) {
+                for i in range(0, 4) {
                     W[j][i] = inv_mcol(W[j][i]);
                 }
             }

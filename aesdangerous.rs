@@ -157,17 +157,18 @@ fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, W: &mut [[u32,
     let KC = key.len() / 4;
 
     let mut t = 0;
-    for uint::range_step(0, key.len(), 4) |i| {
+    do uint::range_step(0, key.len(), 4) |i| {
         W[t >> 2][t & 3] =
             (key[i] as u32) |
             ((key[i+1] as u32) << 8) |
             ((key[i+2] as u32) << 16) |
             ((key[i+3] as u32) << 24);
         t += 1;
-    }
+        true
+    };
 
     let k = (rounds + 1) << 2;
-    for uint::range(KC, k) |i| {
+    for i in range(KC, k) {
         let mut temp = W[(i - 1) >> 2][(i - 1) & 3];
         if ((i % KC) == 0) {
             temp = sub_word(shift(temp, 8)) ^ rcon[(i / KC) - 1];
@@ -180,8 +181,8 @@ fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, W: &mut [[u32,
 
     match key_type {
         Decryption => {
-            for uint::range(1, rounds) |j| {
-                for uint::range(0, 4) |i| {
+            for j in range(1, rounds) {
+                for i in range(0, 4) {
                     W[j][i] = inv_mcol(W[j][i]);
                 }
             }
