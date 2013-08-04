@@ -13,12 +13,8 @@ macro_rules! impl_padded_modes(
     (
         $modname:ident,
         $block_size:expr,
-        $cast_to:ident,
         $FixedBuffer:ident,
-        $BlockEncryptor:ident,
-        $BlockDecryptor:ident,
-        $PaddedEncryptionMode:ident,
-        $PaddedDecryptionMode:ident,
+        $BlockSize:ident,
         $EcbEncryptionWithNoPadding:ident,
         $EcbEncryptionWithPkcs7Padding:ident,
         $CbcEncryptionWithNoPadding:ident,
@@ -40,7 +36,7 @@ macro_rules! impl_padded_modes(
                 priv algo: A
             }
 
-            impl <A: $BlockEncryptor> $EcbEncryptionWithNoPadding<A> {
+            impl <A: BlockEncryptor + $BlockSize> $EcbEncryptionWithNoPadding<A> {
                 pub fn new(algo: A) -> $EcbEncryptionWithNoPadding<A> {
                     $EcbEncryptionWithNoPadding {
                         algo: algo
@@ -48,14 +44,16 @@ macro_rules! impl_padded_modes(
                 }
             }
 
-            impl <A: $BlockEncryptor> $PaddedEncryptionMode for $EcbEncryptionWithNoPadding<A> {
-                fn encrypt_block(&mut self, input: &[u8, ..$block_size], handler: &fn(&[u8])) {
-                    let tmp = self.algo.encrypt_block(input);
+            impl <A> $BlockSize for $EcbEncryptionWithNoPadding<A>;
+
+            impl <A: BlockEncryptor> PaddedEncryptionMode for $EcbEncryptionWithNoPadding<A> {
+                fn encrypt_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
+                    let mut tmp = [0u8, ..$block_size];
+                    self.algo.encrypt_block(input, tmp);
                     handler(tmp);
                 }
                 fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
-                    // TODO - check length?
-                    self.encrypt_block($cast_to(input), handler);
+                    self.encrypt_block(input, handler);
                 }
             }
 
@@ -64,7 +62,7 @@ macro_rules! impl_padded_modes(
                 priv algo: A
             }
 
-            impl <A: $BlockEncryptor> $EcbEncryptionWithPkcs7Padding<A> {
+            impl <A: BlockEncryptor + $BlockSize> $EcbEncryptionWithPkcs7Padding<A> {
                 pub fn new(algo: A) -> $EcbEncryptionWithPkcs7Padding<A> {
                     $EcbEncryptionWithPkcs7Padding {
                         algo: algo
@@ -72,17 +70,20 @@ macro_rules! impl_padded_modes(
                 }
             }
 
-            impl <A: $BlockEncryptor> $PaddedEncryptionMode for $EcbEncryptionWithPkcs7Padding<A> {
-                fn encrypt_block(&mut self, input: &[u8, ..$block_size], handler: &fn(&[u8])) {
-                    let tmp = self.algo.encrypt_block(input);
+            impl <A> $BlockSize for $EcbEncryptionWithPkcs7Padding<A>;
+
+            impl <A: BlockEncryptor> PaddedEncryptionMode for $EcbEncryptionWithPkcs7Padding<A> {
+                fn encrypt_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
+                    let mut tmp = [0u8, ..$block_size];
+                    self.algo.encrypt_block(input, tmp);
                     handler(tmp);
                 }
                 fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
                     match input.len() % $block_size {
                         0 => {
-                            self.encrypt_block($cast_to(input), |d: &[u8]| { handler(d); });
+                            self.encrypt_block(input, |d: &[u8]| { handler(d); });
                             let buff = [$block_size as u8, ..$block_size];
-                            self.encrypt_block(&buff, |d: &[u8]| { handler(d); });
+                            self.encrypt_block(buff, |d: &[u8]| { handler(d); });
                         },
                         _ => {
                             if (input.len() > $block_size) {
@@ -96,7 +97,7 @@ macro_rules! impl_padded_modes(
                             for i in range(input.len(), $block_size) {
                                 buff[i] = val;
                             }
-                            self.encrypt_block(&buff, |d: &[u8]| { handler(d); });
+                            self.encrypt_block(buff, |d: &[u8]| { handler(d); });
                         }
                     }
                 }
@@ -108,7 +109,7 @@ macro_rules! impl_padded_modes(
                 priv last_block: [u8, ..$block_size]
             }
 
-            impl <A: $BlockEncryptor> $CbcEncryptionWithNoPadding<A> {
+            impl <A: BlockEncryptor + $BlockSize> $CbcEncryptionWithNoPadding<A> {
                 pub fn new(algo: A, iv: &[u8]) -> $CbcEncryptionWithNoPadding<A> {
                     let mut m = $CbcEncryptionWithNoPadding {
                         algo: algo,
@@ -126,16 +127,20 @@ macro_rules! impl_padded_modes(
                 }
             }
 
-            impl <A: $BlockEncryptor> $PaddedEncryptionMode for $CbcEncryptionWithNoPadding<A> {
-                fn encrypt_block(&mut self, input: &[u8, ..$block_size], handler: &fn(&[u8])) {
+            impl <A> $BlockSize for $CbcEncryptionWithNoPadding<A>;
+
+            impl <A: BlockEncryptor> PaddedEncryptionMode for $CbcEncryptionWithNoPadding<A> {
+                fn encrypt_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
                     for i in range(0, $block_size) {
                         self.last_block[i] ^ input[i];
                     }
-                    self.last_block = self.algo.encrypt_block(&self.last_block);
+                    fail!("yikes, not implemented.");
+                    // TODO - what to do here?
+                    // self.algo.encrypt_block(&self.last_block, self.last_block);
                     handler(self.last_block);
                 }
                 fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
-                    self.encrypt_block($cast_to(input), handler);
+                    self.encrypt_block(input, handler);
                 }
             }
 
@@ -145,7 +150,7 @@ macro_rules! impl_padded_modes(
                 priv last_block: [u8, ..$block_size]
             }
 
-            impl <A: $BlockEncryptor> $CbcEncryptionWithPkcs7Padding<A> {
+            impl <A: BlockEncryptor + $BlockSize> $CbcEncryptionWithPkcs7Padding<A> {
                 pub fn new(algo: A, iv: &[u8]) -> $CbcEncryptionWithPkcs7Padding<A> {
                     let mut m = $CbcEncryptionWithPkcs7Padding {
                         algo: algo,
@@ -163,24 +168,25 @@ macro_rules! impl_padded_modes(
                 }
             }
 
-            impl <A: $BlockEncryptor> $PaddedEncryptionMode for $CbcEncryptionWithPkcs7Padding<A> {
-                fn encrypt_block(&mut self, input: &[u8, ..$block_size], handler: &fn(&[u8])) {
+            impl <A> $BlockSize for $CbcEncryptionWithPkcs7Padding<A>;
+
+            impl <A: BlockEncryptor> PaddedEncryptionMode for $CbcEncryptionWithPkcs7Padding<A> {
+                fn encrypt_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
                     for i in range(0, $block_size) {
                         self.last_block[i] ^ input[i];
                     }
-                    self.last_block = self.algo.encrypt_block(&self.last_block);
+                    fail!("yikes, not implemented.");
+                    // TODO - what to do here?
+                    // self.last_block = self.algo.encrypt_block(&self.last_block);
                     handler(self.last_block);
-                }
-                fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
-                    self.encrypt_block($cast_to(input), handler);
                 }
 
                 fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
                     match input.len() % $block_size {
                         0 => {
-                            self.encrypt_block($cast_to(input), |d: &[u8]| { handler(d); });
+                            self.encrypt_block(input, |d: &[u8]| { handler(d); });
                             let buff = [$block_size as u8, ..$block_size];
-                            self.encrypt_block(&buff, |d: &[u8]| { handler(d); });
+                            self.encrypt_block(buff, |d: &[u8]| { handler(d); });
                         },
                         _ => {
                             if (input.len() > $block_size) {
@@ -194,7 +200,7 @@ macro_rules! impl_padded_modes(
                             for i in range(input.len(), $block_size) {
                                 buff[i] = val;
                             }
-                            let tmp = self.encrypt_block(&buff, handler);
+                            let tmp = self.encrypt_block(buff, handler);
                         }
                     }
                 }
@@ -206,7 +212,7 @@ macro_rules! impl_padded_modes(
                 buffer: $FixedBuffer
             }
 
-            impl <M: $PaddedEncryptionMode> $EncryptionBuffer<M> {
+            impl <M: PaddedEncryptionMode + $BlockSize> $EncryptionBuffer<M> {
                 fn new(mode: M) -> $EncryptionBuffer<M> {
                     $EncryptionBuffer {
                         mode: mode,
@@ -215,11 +221,11 @@ macro_rules! impl_padded_modes(
                 }
             }
 
-            impl <M: $PaddedEncryptionMode> EncryptionBuffer for $EncryptionBuffer<M> {
+            impl <M: PaddedEncryptionMode> EncryptionBuffer for $EncryptionBuffer<M> {
                 fn encrypt(&mut self, input: &[u8], handler: &fn(&[u8])) {
                     let func = |data: &[u8]| {
                         self.mode.encrypt_block(
-                            $cast_to(data),
+                            data,
                             |x: &[u8]| { handler(x); })
                     };
                     self.buffer.input(input, func);
@@ -234,19 +240,15 @@ macro_rules! impl_padded_modes(
 )
 
 impl_padded_modes!(
-    padded_128, // mod name
+    padded_16, // mod name
     16, // block size
-    vec_to_array128, // function to convert a vector to a fixed length vector
     FixedBuffer16, // FixedBuffer implementation to use
-    BlockEncryptor128, // name of the block encryption trait to use
-    BlockDecryptor128, // name of the block decryption trait to use
-    PaddedEncryptionMode128, // name of the padded encryption trait to use
-    PaddedDecryptionMode128, // name of the padded decryption trait to use
-    EcbEncryptionWithNoPadding128, // ecb w/ no padding mode name
-    EcbEncryptionWithPkcs7Padding128, // ecb w/ pkcs#7 padding mode name
-    CbcEncryptionWithNoPadding128, // cbc w/ no padding mode name
-    CbcEncryptionWithPkcsPadding128, // cbc w/ no padding mode name
+    BlockSize16, // Block size
+    EcbEncryptionWithNoPadding16, // ecb w/ no padding mode name
+    EcbEncryptionWithPkcs7Padding16, // ecb w/ pkcs#7 padding mode name
+    CbcEncryptionWithNoPadding16, // cbc w/ no padding mode name
+    CbcEncryptionWithPkcsPadding16, // cbc w/ no padding mode name
 
-    EncryptionBuffer128 // EncryptionBuffer for 128 bit block size
-    DecryptionBuffer128 // EncryptionBuffer for 128 bit block size
+    EncryptionBuffer16 // EncryptionBuffer for 128 bit block size
+    DecryptionBuffer16 // EncryptionBuffer for 128 bit block size
 )

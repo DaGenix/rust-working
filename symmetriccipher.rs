@@ -47,40 +47,35 @@ struct OfbMode
 
 */
 
-/// Trait for a Symmetric Cipher algorithm that uses a 128-bit key
-pub trait SymmetricCipher128 {
-    fn set_key(&mut self, key: &[u8, ..16]);
+pub trait BlockSize16 { }
+
+/// Trait for a Symmetric Cipher algorithm
+pub trait SymmetricCipher {
+    fn set_key(&mut self, key: &[u8]);
+//    fn key_size(&self) -> uint;
 }
 
-/// Trait for a Symmetric Cipher algorithm that uses a 192-bit key
-pub trait SymmetricCipher192 {
-    fn set_key(&mut self, key: &[u8, ..24]);
+/// Trait for a Cipher that can encrypt a block of data
+pub trait BlockEncryptor {
+    fn encrypt_block(&self, input: &[u8], output: &mut [u8]);
+//    fn block_size(&self) -> uint;
 }
 
-/// Trait for a Symmetric Cipher algorithm that uses a 256-bit key
-pub trait SymmetricCipher256 {
-    fn set_key(&mut self, key: &[u8, ..32]);
-}
-
-/// Trait for a Cipher that can encrypt a block of 128 bits
-pub trait BlockEncryptor128 {
-    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16];
-}
-
-/// Trait for a Cipher that can decrypt a block of 128 bits
-pub trait BlockDecryptor128 {
-    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16];
+/// Trait for a Cipher that can decrypt a block of data
+pub trait BlockDecryptor {
+    fn decrypt_block(&self, input: &[u8], output: &mut [u8]);
+//    fn block_size(&self) -> uint;
 }
 
 /// Trait for a block cipher mode of operation that requires padding the end of the stream
-pub trait PaddedEncryptionMode128 {
-    fn encrypt_block(&mut self, input: &[u8, ..16], handler: &fn(&[u8]));
+pub trait PaddedEncryptionMode {
+    fn encrypt_block(&mut self, input: &[u8], handler: &fn(&[u8]));
     fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8]));
 }
 
 /// Trait for a block cipher mode of operation that requires padding the end of the stream
-pub trait PaddedDecryptionMode128 {
-    fn decrypt_block(&mut self, input: &[u8, ..16], handler: &fn(&[u8]));
+pub trait PaddedDecryptionMode {
+    fn decrypt_block(&mut self, input: &[u8], handler: &fn(&[u8]));
     fn decrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8]));
 }
 

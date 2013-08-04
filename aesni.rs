@@ -40,27 +40,27 @@ impl AesNi128Decryptor {
     }
 }
 
-impl BlockEncryptor128 for AesNi128Encryptor {
-    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-        return encrypt_block_aseni(10, input, self.kw);
+impl BlockEncryptor for AesNi128Encryptor {
+    fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
+        encrypt_block_aseni(10, input, self.kw, output);
     }
 }
 
-impl SymmetricCipher128 for AesNi128Encryptor {
-    fn set_key(&mut self, key: &[u8, ..16]) {
-        self.kw = setup_working_key_aesni_128(key, Encryption);
+impl SymmetricCipher for AesNi128Encryptor {
+    fn set_key(&mut self, key: &[u8]) {
+        setup_working_key_aesni_128(key, Encryption, self.kw);
     }
 }
 
-impl BlockDecryptor128 for AesNi128Decryptor {
-    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-        return decrypt_block_aseni(10, input, self.kw);
+impl BlockDecryptor for AesNi128Decryptor {
+    fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
+        decrypt_block_aseni(10, input, self.kw, output);
     }
 }
 
-impl SymmetricCipher128 for AesNi128Decryptor {
-    fn set_key(&mut self, key: &[u8, ..16]) {
-        self.kw = setup_working_key_aesni_128(key, Decryption);
+impl SymmetricCipher for AesNi128Decryptor {
+    fn set_key(&mut self, key: &[u8]) {
+        setup_working_key_aesni_128(key, Decryption, self.kw);
     }
 }
 
@@ -88,27 +88,27 @@ impl AesNi192Decryptor {
     }
 }
 
-impl BlockEncryptor128 for AesNi192Encryptor {
-    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-        return encrypt_block_aseni(12, input, self.kw);
+impl BlockEncryptor for AesNi192Encryptor {
+    fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
+        encrypt_block_aseni(12, input, self.kw, output);
     }
 }
 
-impl SymmetricCipher192 for AesNi192Encryptor {
-    fn set_key(&mut self, key: &[u8, ..24]) {
-        self.kw = setup_working_key_aesni_192(key, Encryption);
+impl SymmetricCipher for AesNi192Encryptor {
+    fn set_key(&mut self, key: &[u8]) {
+        setup_working_key_aesni_192(key, Encryption, self.kw);
     }
 }
 
-impl BlockDecryptor128 for AesNi192Decryptor {
-    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-        return decrypt_block_aseni(12, input, self.kw);
+impl BlockDecryptor for AesNi192Decryptor {
+    fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
+        decrypt_block_aseni(12, input, self.kw, output);
     }
 }
 
-impl SymmetricCipher192 for AesNi192Decryptor {
-    fn set_key(&mut self, key: &[u8, ..24]) {
-        self.kw = setup_working_key_aesni_192(key, Decryption);
+impl SymmetricCipher for AesNi192Decryptor {
+    fn set_key(&mut self, key: &[u8]) {
+        setup_working_key_aesni_192(key, Decryption, self.kw);
     }
 }
 
@@ -136,27 +136,27 @@ impl AesNi256Decryptor {
     }
 }
 
-impl BlockEncryptor128 for AesNi256Encryptor {
-    fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-        return encrypt_block_aseni(14, input, self.kw);
+impl BlockEncryptor for AesNi256Encryptor {
+    fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
+        encrypt_block_aseni(14, input, self.kw, output);
     }
 }
 
-impl SymmetricCipher256 for AesNi256Encryptor {
-    fn set_key(&mut self, key: &[u8, ..32]) {
-        self.kw = setup_working_key_aesni_256(key, Encryption);
+impl SymmetricCipher for AesNi256Encryptor {
+    fn set_key(&mut self, key: &[u8]) {
+        setup_working_key_aesni_256(key, Encryption, self.kw);
     }
 }
 
-impl BlockDecryptor128 for AesNi256Decryptor {
-    fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-        return decrypt_block_aseni(14, input, self.kw);
+impl BlockDecryptor for AesNi256Decryptor {
+    fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
+        decrypt_block_aseni(14, input, self.kw, output);
     }
 }
 
-impl SymmetricCipher256 for AesNi256Decryptor {
-    fn set_key(&mut self, key: &[u8, ..32]) {
-        self.kw = setup_working_key_aesni_256(key, Decryption);
+impl SymmetricCipher for AesNi256Decryptor {
+    fn set_key(&mut self, key: &[u8]) {
+        setup_working_key_aesni_256(key, Decryption, self.kw);
     }
 }
 
@@ -181,11 +181,9 @@ unsafe fn aesimc(kw: *u8) {
 }
 
 #[inline(never)]
-fn setup_working_key_aesni_128(key: &[u8, ..16], key_type: KeyType) -> [u8, ..16 * (10 + 1)] {
-    let kw = [0u8, ..16 * (10 + 1)];
-
+fn setup_working_key_aesni_128(key: &[u8], key_type: KeyType, round_key: &mut [u8]) {
     unsafe {
-        let mut kwp: *u8 = kw.unsafe_ref(0);
+        let mut kwp: *u8 = round_key.unsafe_ref(0);
         let keyp: *u8 = key.unsafe_ref(0);
 
         asm!(
@@ -242,132 +240,28 @@ fn setup_working_key_aesni_128(key: &[u8, ..16], key_type: KeyType) -> [u8, ..16
             Decryption => {
                 // range of rounds keys from #1 to #9; skip the first and last key
                 for i in range(1u, 10) {
-                    aesimc(kw.unsafe_ref(16 * i));
+                    aesimc(round_key.unsafe_ref(16 * i));
                 }
             }
             Encryption => { /* nothing more to do */ }
         }
     }
-
-    return kw;
 }
 
-#[cfg(not(off))]
-fn setup_working_key_aesni_192(key: &[u8, ..24], key_type: KeyType) -> [u8, ..16 * (12 + 1)] {
-    [0u8, ..16 * (12 + 1)]
+fn setup_working_key_aesni_192(key: &[u8], key_type: KeyType, round_key: &mut [u8]) {
 }
 
-#[cfg(off)]
-fn setup_working_key_aesni_192(key: &[u8, ..24], key_type: KeyType) -> [u8, ..16 * (12 + 1)] {
-    let kw = [0u8, ..16 * (12 + 1)];
-
-    unsafe {
-        let mut kwp: *u8 = kw.unsafe_ref(0);
-        let keyp: *u8 = key.unsafe_ref(0);
-
-        asm!(
-        "
-            movdqu ($1), %xmm1
-            movdqu %xmm1, ($0)
-            add $$0x10, $0
-
-                __m128i temp1, temp2, temp3, temp4;
-                __m128i *Key_Schedule = (__m128i*)key;
-                temp1 = _mm_loadu_si128((__m128i*)userkey);
-                temp3 = _mm_loadu_si128((__m128i*)(userkey+16));
-                Key_Schedule[0]=temp1;
-                Key_Schedule[1]=temp3;
-                temp2=_mm_aeskeygenassist_si128 (temp3,0x1);
-                KEY_192_ASSIST(&temp1, &temp2, &temp3);
-                Key_Schedule[1] = (__m128i)_mm_shuffle_pd((__m128d)Key_Schedule[1],
-                (__m128d)temp1,0);
-                Key_Schedule[2] = (__m128i)_mm_shuffle_pd((__m128d)temp1,(__m128d)temp3,1);
-                temp2=_mm_aeskeygenassist_si128 (temp3,0x2);
-                KEY_192_ASSIST(&temp1, &temp2, &temp3);
-                Key_Schedule[3]=temp1;
-                Key_Schedule[4]=temp3;
-                temp2=_mm_aeskeygenassist_si128 (temp3,0x4);
-                KEY_192_ASSIST(&temp1, &temp2, &temp3);
-                Key_Schedule[4] = (__m128i)_mm_shuffle_pd((__m128d)Key_Schedule[4],
-                (__m128d)temp1,0);
-                Key_Schedule[5] = (__m128i)_mm_shuffle_pd((__m128d)temp1,(__m128d)temp3,1);
-                temp2=_mm_aeskeygenassist_si128 (temp3,0x8);
-                KEY_192_ASSIST(&temp1, &temp2, &temp3);
-                Key_Schedule[6]=temp1;
-                Key_Schedule[7]=temp3;
-                temp2=_mm_aeskeygenassist_si128 (temp3,0x10);
-                KEY_192_ASSIST(&temp1, &temp2, &temp3);
-                Key_Schedule[7] = (__m128i)_mm_shuffle_pd((__m128d)Key_Schedule[7],
-                (__m128d)temp1,0);
-                Key_Schedule[8] = (__m128i)_mm_shuffle_pd((__m128d)temp1,(__m128d)temp3,1);
-                temp2=_mm_aeskeygenassist_si128 (temp3,0x20);
-                KEY_192_ASSIST(&temp1, &temp2, &temp3);
-                Key_Schedule[9]=temp1;
-                Key_Schedule[10]=temp3;
-                temp2=_mm_aeskeygenassist_si128 (temp3,0x40);
-                KEY_192_ASSIST(&temp1, &temp2, &temp3);
-                Key_Schedule[10] = (__m128i)_mm_shuffle_pd((__m128d)Key_Schedule[10],
-                (__m128d)temp1,0);
-                Key_Schedule[11] = (__m128i)_mm_shuffle_pd((__m128d)temp1,(__m128d)temp3,1);
-                temp2=_mm_aeskeygenassist_si128 (temp3,0x80);
-                KEY_192_ASSIST(&temp1, &temp2, &temp3);
-                Key_Schedule[12]=temp1;
-
-            jmp end_key_192
-
-            key_expansion_192:
-                __m128i temp4;
-                *temp2 = _mm_shuffle_epi32 (*temp2, 0x55);
-                temp4 = _mm_slli_si128 (*temp1, 0x4);
-                *temp1 = _mm_xor_si128 (*temp1, temp4);
-                temp4 = _mm_slli_si128 (temp4, 0x4);
-                *temp1 = _mm_xor_si128 (*temp1, temp4);
-                temp4 = _mm_slli_si128 (temp4, 0x4);
-                *temp1 = _mm_xor_si128 (*temp1, temp4);
-                *temp1 = _mm_xor_si128 (*temp1, *temp2);
-                *temp2 = _mm_shuffle_epi32(*temp1, 0xff);
-                temp4 = _mm_slli_si128 (*temp3, 0x4);
-                *temp3 = _mm_xor_si128 (*temp3, temp4);
-                *temp3 = _mm_xor_si128 (*temp3, *temp2);
-            ret
-
-            end_key_192:
-        "
-        : "=r" (kwp)
-        : "r" (keyp), "0" (kwp)
-        : "xmm1", "xmm2", "xmm3", "memory"
-        : "volatile"
-        )
-
-        match key_type {
-            Encryption => { /* nothing more to do */ }
-            Decryption => {
-                // range of rounds keys from #1 to #11; skip the first and last key
-                do uint::range(1, 12) |i| {
-                    aesimc(kw.unsafe_ref(16 * i));
-                    true
-                };
-            }
-        }
-    }
-
-    return kw;
-}
-
-fn setup_working_key_aesni_256(key: &[u8, ..32], key_type: KeyType) -> [u8, ..16 * (14 + 1)] {
-    [0u8, ..16 * (14 + 1)]
+fn setup_working_key_aesni_256(key: &[u8], key_type: KeyType, round_key: &mut [u8]) {
 }
 
 #[inline(never)]
-fn encrypt_block_aseni(rounds: uint, input: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
+fn encrypt_block_aseni(rounds: uint, input: &[u8], kw: &[u8], output: &mut [u8]) {
     use std::cast::transmute;
-
-    let out = [0u8, ..16];
 
     unsafe {
         let mut rounds = rounds;
         let mut kwp: *u8 = kw.unsafe_ref(0);
-        let outp: *u8 = out.unsafe_ref(0);
+        let outp: *u8 = output.unsafe_ref(0);
         let inp: *u8 = input.unsafe_ref(0);
 
         asm!(
@@ -402,18 +296,14 @@ fn encrypt_block_aseni(rounds: uint, input: &[u8, ..16], kw: &[u8]) -> [u8, ..16
         : "volatile" // options
         );
     }
-
-    return out;
 }
 
 #[inline(never)]
-fn decrypt_block_aseni(rounds: uint, input: &[u8, ..16], kw: &[u8]) -> [u8, ..16] {
-    let out = [0u8, ..16];
-
+fn decrypt_block_aseni(rounds: uint, input: &[u8], kw: &[u8], output: &mut [u8]) {
     unsafe {
         let mut rounds = rounds;
         let mut kwp: *u8 = kw.unsafe_ref(kw.len() - 16);
-        let outp: *u8 = out.unsafe_ref(0);
+        let outp: *u8 = output.unsafe_ref(0);
         let inp: *u8 = input.unsafe_ref(0);
 
         asm!(
@@ -448,6 +338,4 @@ fn decrypt_block_aseni(rounds: uint, input: &[u8, ..16], kw: &[u8]) -> [u8, ..16
         : "volatile" // options
         );
     }
-
-    return out;
 }

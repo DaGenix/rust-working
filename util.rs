@@ -13,6 +13,8 @@ use std::num::Zero;
 use std::ops::BitOr;
 use std::uint;
 
+/*
+
 pub fn vec_to_array64<'s>(input: &'s [u8]) -> &'s [u8, ..8] {
     if(input.len() != 8) {
         fail!();
@@ -52,6 +54,7 @@ pub fn vec_to_array256<'s>(input: &'s [u8]) -> &'s [u8, ..32] {
         return tmp;
     }
 }
+*/
 
 /*
 
