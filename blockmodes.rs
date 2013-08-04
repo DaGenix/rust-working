@@ -195,7 +195,7 @@ macro_rules! impl_padded_modes(
                             for i in range(input.len(), $block_size) {
                                 buff[i] = val;
                             }
-                            let tmp = self.encrypt_block(buff, handler);
+                            self.encrypt_block(buff, handler);
                         }
                     }
                 }
