@@ -53,8 +53,11 @@ macro_rules! impl_padded_modes(
                     self.algo.encrypt_block(input, tmp);
                     handler(tmp);
                 }
-                fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
-                    self.encrypt_block(input, handler);
+                fn encrypt_final_block(&mut self, input: Option<&[u8]>, handler: &fn(&[u8])) {
+                    match input {
+                        Some(input) => { self.encrypt_block(input, handler) }
+                        None => { }
+                    }
                 }
             }
 
@@ -80,27 +83,32 @@ macro_rules! impl_padded_modes(
                     self.algo.encrypt_block(input, tmp);
                     handler(tmp);
                 }
-                fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
-                    match input.len() % $block_size {
-                        0 => {
-                            self.encrypt_block(input, |d: &[u8]| { handler(d); });
-                            let buff = [$block_size as u8, ..$block_size];
-                            self.encrypt_block(buff, |d: &[u8]| { handler(d); });
-                        },
-                        _ => {
-                            if (input.len() > $block_size) {
-                                fail!();
+                fn encrypt_final_block(&mut self, input: Option<&[u8]>, handler: &fn(&[u8])) {
+                    match input {
+                        Some(input) => {
+                            match input.len() % $block_size {
+                                0 => {
+                                    self.encrypt_block(input, |d: &[u8]| { handler(d); });
+                                    let buff = [$block_size as u8, ..$block_size];
+                                    self.encrypt_block(buff, |d: &[u8]| { handler(d); });
+                                },
+                                _ => {
+                                    if (input.len() > $block_size) {
+                                        fail!();
+                                    }
+                                    let val = ($block_size - input.len()) as u8;
+                                    let mut buff = [0u8, ..$block_size];
+                                    for i in range(0, input.len()) {
+                                        buff[i] = input[i];
+                                    }
+                                    for i in range(input.len(), $block_size) {
+                                        buff[i] = val;
+                                    }
+                                    self.encrypt_block(buff, |d: &[u8]| { handler(d); });
+                                }
                             }
-                            let val = ($block_size - input.len()) as u8;
-                            let mut buff = [0u8, ..$block_size];
-                            for i in range(0, input.len()) {
-                                buff[i] = input[i];
-                            }
-                            for i in range(input.len(), $block_size) {
-                                buff[i] = val;
-                            }
-                            self.encrypt_block(buff, |d: &[u8]| { handler(d); });
                         }
+                        None => { }
                     }
                 }
             }
@@ -141,8 +149,11 @@ macro_rules! impl_padded_modes(
                     self.algo.encrypt_block(tmp, self.last_block);
                     handler(self.last_block);
                 }
-                fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
-                    self.encrypt_block(input, handler);
+                fn encrypt_final_block(&mut self, input: Option<&[u8]>, handler: &fn(&[u8])) {
+                    match input {
+                        Some(input) => { self.encrypt_block(input, handler) }
+                        None => { }
+                    }
                 }
             }
 
@@ -183,27 +194,32 @@ macro_rules! impl_padded_modes(
                     handler(self.last_block);
                 }
 
-                fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8])) {
-                    match input.len() % $block_size {
-                        0 => {
-                            self.encrypt_block(input, |d: &[u8]| { handler(d); });
-                            let buff = [$block_size as u8, ..$block_size];
-                            self.encrypt_block(buff, |d: &[u8]| { handler(d); });
-                        },
-                        _ => {
-                            if (input.len() > $block_size) {
-                                fail!();
+                fn encrypt_final_block(&mut self, input: Option<&[u8]>, handler: &fn(&[u8])) {
+                    match input {
+                        Some(input) => {
+                            match input.len() % $block_size {
+                                0 => {
+                                    self.encrypt_block(input, |d: &[u8]| { handler(d); });
+                                    let buff = [$block_size as u8, ..$block_size];
+                                    self.encrypt_block(buff, |d: &[u8]| { handler(d); });
+                                },
+                                _ => {
+                                    if (input.len() > $block_size) {
+                                        fail!();
+                                    }
+                                    let val = ($block_size - input.len()) as u8;
+                                    let mut buff = [0u8, ..$block_size];
+                                    for i in range(0, input.len()) {
+                                        buff[i] = input[i];
+                                    }
+                                    for i in range(input.len(), $block_size) {
+                                        buff[i] = val;
+                                    }
+                                    self.encrypt_block(buff, handler);
+                                }
                             }
-                            let val = ($block_size - input.len()) as u8;
-                            let mut buff = [0u8, ..$block_size];
-                            for i in range(0, input.len()) {
-                                buff[i] = input[i];
-                            }
-                            for i in range(input.len(), $block_size) {
-                                buff[i] = val;
-                            }
-                            self.encrypt_block(buff, handler);
                         }
+                        None => { }
                     }
                 }
             }
@@ -234,7 +250,14 @@ macro_rules! impl_padded_modes(
                 }
 
                 fn final(&mut self, handler: &fn(&[u8])) {
-                    self.mode.encrypt_final_block(self.buffer.current_buffer(), handler);
+                    match self.buffer.position() {
+                        0 => { self.mode.encrypt_final_block(None, handler); }
+                        _ => {
+                            self.mode.encrypt_final_block(
+                                Some(self.buffer.current_buffer()),
+                                handler);
+                        }
+                    }
                 }
             }
 

@@ -41,13 +41,13 @@ pub trait BlockDecryptor {
 /// Trait for a block cipher mode of operation that requires padding the end of the stream
 pub trait PaddedEncryptionMode {
     fn encrypt_block(&mut self, input: &[u8], handler: &fn(&[u8]));
-    fn encrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8]));
+    fn encrypt_final_block(&mut self, input: Option<&[u8]>, handler: &fn(&[u8]));
 }
 
 /// Trait for a block cipher mode of operation that requires padding the end of the stream
 pub trait PaddedDecryptionMode {
     fn decrypt_block(&mut self, input: &[u8], handler: &fn(&[u8]));
-    fn decrypt_final_block(&mut self, input: &[u8], handler: &fn(&[u8]));
+    fn decrypt_final_block(&mut self, input: Option<&[u8]>, handler: &fn(&[u8]));
 }
 
 /// Trait for an object that buffers data to encrypt until there is a full block
