@@ -56,6 +56,14 @@ macro_rules! define_impl(
     )
 )
 
+macro_rules! define_block(
+    (
+        $name:ident
+    ) => (
+        impl BlockSize16 for $name { }
+    )
+)
+
 macro_rules! define_enc(
     (
         $AesEncryptor:ident,
@@ -144,6 +152,8 @@ define_impl!(
     Aes128Decryptor,
     AesNiDecryptionEngine128 => AesNi128Decryptor,
     AesSafeDecryptionEngine128 => AesSafe128Decryptor)
+define_block!(Aes128Encryptor)
+define_block!(Aes128Decryptor)
 define_enc!(
     Aes128Encryptor,
     AesNiEncryptionEngine128,
@@ -178,6 +188,8 @@ define_impl!(
     Aes192Decryptor,
     AesNiDecryptionEngine192 => AesNi192Decryptor,
     AesSafeDecryptionEngine192 => AesSafe192Decryptor)
+define_block!(Aes192Encryptor)
+define_block!(Aes192Decryptor)
 define_enc!(
     Aes192Encryptor,
     AesNiEncryptionEngine192,
@@ -212,6 +224,8 @@ define_impl!(
     Aes256Decryptor,
     AesNiDecryptionEngine256 => AesNi256Decryptor,
     AesSafeDecryptionEngine256 => AesSafe256Decryptor)
+define_block!(Aes256Encryptor)
+define_block!(Aes256Decryptor)
 define_enc!(
     Aes256Encryptor,
     AesNiEncryptionEngine256,
@@ -475,17 +489,19 @@ mod bench {
 
     #[bench]
     pub fn aes_bench(bh: &mut BenchHarness) {
-        let key: [u8, ..16] = [0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c];
-        let plain: [u8, ..16] = [0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a];
+        let key: [u8, ..16] = [1u8, ..16];
+        let plain: [u8, ..16] = [2u8, ..16];
 
         let a = Aes128Encryptor::new(key);
 
         let mut tmp = [0u8, ..16];
 
         do bh.iter {
-            a.encrypt_block(plain, tmp);
+            for _ in range(0, 64) {
+                a.encrypt_block(plain, tmp);
+            }
         }
 
-        bh.bytes = plain.len() as u64;
+        bh.bytes = (plain.len() * 64) as u64;
     }
 }

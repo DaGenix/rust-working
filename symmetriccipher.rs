@@ -10,16 +10,22 @@
 
 pub use blockmodes::padded_16;
 
+/// Trait for an algorithm that works on blocks of 8 bytes at a time
+pub trait BlockSize8 { }
+
 /// Trait for an algorithm that works on blocks of 16 bytes at a time
 pub trait BlockSize16 { }
+
+/// Trait for an algorithm that uses 8 byte keys
+pub trait KeySize8 { }
 
 /// Trait for an algorithm that uses 16 byte keys
 pub trait KeySize16 { }
 
-/// Trait for an algorithm that uses 16 byte keys
+/// Trait for an algorithm that uses 24 byte keys
 pub trait KeySize24 { }
 
-/// Trait for an algorithm that uses 16 byte keys
+/// Trait for an algorithm that uses 32 byte keys
 pub trait KeySize32 { }
 
 /// Trait for a Cipher that can encrypt a block of data
