@@ -374,7 +374,7 @@ mod tests {
         use std::uint;
         let mut out: ~[u8] = ~[];
         do uint::range_step(0, input.len(), 2) |i| {
-            out.push(u8::from_str_radix(input.slice(i, i+2), 16).get());
+            out.push(u8::from_str_radix(input.slice(i, i+2), 16).unwrap());
             true
         };
         return out;

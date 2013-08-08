@@ -10,6 +10,7 @@
 
 use std::uint;
 
+use cryptoutil::*;
 use symmetriccipher::*;
 
 /*
@@ -23,7 +24,6 @@ macro_rules! define_aes_struct(
     ) => (
         struct $name {
             working_key: [[u32, ..4], ..$rounds + 1],
-            initialized: bool
         }
     )
 )
@@ -36,11 +36,12 @@ macro_rules! define_aes_impl(
         $key_size:expr
     ) => (
         impl $name {
-            pub fn new() -> $name {
-                return $name {
+            pub fn new(key: &[u8]) -> $name {
+                let mut a = $name {
                     working_key: [[0u32, ..4], ..$rounds + 1],
-                    initialized: false
                 };
+                setup_working_key(key, $rounds, $mode, a.working_key);
+                return a;
             }
         }
     )
@@ -51,10 +52,9 @@ macro_rules! define_aes_enc(
         $name:ident,
         $rounds:expr
     ) => (
-        impl BlockEncryptor128 for $name {
-            fn encrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-                assert!(self.initialized);
-                return encrypt_block($rounds, input, self.working_key);
+        impl BlockEncryptor for $name {
+            fn encrypt_block(&self, input: &[u8], out: &mut [u8]) {
+                return encrypt_block($rounds, input, self.working_key, out);
             }
         }
     )
@@ -65,61 +65,37 @@ macro_rules! define_aes_dec(
         $name:ident,
         $rounds:expr
     ) => (
-        impl BlockDecryptor128 for $name {
-            fn decrypt_block(&self, input: &[u8, ..16]) -> [u8, ..16] {
-                assert!(self.initialized);
-                return decrypt_block($rounds, input, self.working_key);
+        impl BlockDecryptor for $name {
+            fn decrypt_block(&self, input: &[u8], out: &mut [u8]) {
+                return decrypt_block($rounds, input, self.working_key, out);
             }
         }
     )
 )
 
-macro_rules! define_aes_init(
-    (
-        $name:ident,
-        $tra:ident,
-        $keytype:ty,
-        $mode:expr,
-        $rounds:expr
-    ) => (
-        impl $tra for $name {
-            fn set_key(&mut self, key: $keytype) {
-                setup_working_key(*key, $rounds, $mode, self.working_key);
-                self.initialized = true;
-            }
-        }
-    )
-)
+define_aes_struct!(AesDangerous128Encryptor, 10)
+define_aes_struct!(AesDangerous128Decryptor, 10)
+define_aes_impl!(AesDangerous128Encryptor, Encryption, 10, 16)
+define_aes_impl!(AesDangerous128Decryptor, Decryption, 10, 16)
+define_aes_enc!(AesDangerous128Encryptor, 10)
+define_aes_dec!(AesDangerous128Decryptor, 10)
 
-define_aes_struct!(Aes128Encrypt, 10)
-define_aes_struct!(Aes128Decrypt, 10)
-define_aes_impl!(Aes128Encrypt, Encryption, 10, 16)
-define_aes_impl!(Aes128Decrypt, Decryption, 10, 16)
-define_aes_enc!(Aes128Encrypt, 10)
-define_aes_dec!(Aes128Decrypt, 10)
-define_aes_init!(Aes128Encrypt, SymmetricCipher128, &[u8, ..16], Encryption, 10)
-define_aes_init!(Aes128Decrypt, SymmetricCipher128, &[u8, ..16], Decryption, 10)
+define_aes_struct!(AesDangerous192Encryptor, 12)
+define_aes_struct!(AesDangerous192Decryptor, 12)
+define_aes_impl!(AesDangerous192Encryptor, Encryption, 12, 24)
+define_aes_impl!(AesDangerous192Decryptor, Decryption, 12, 24)
+define_aes_enc!(AesDangerous192Encryptor, 12)
+define_aes_dec!(AesDangerous192Decryptor, 12)
 
-define_aes_struct!(Aes192Encrypt, 12)
-define_aes_struct!(Aes192Decrypt, 12)
-define_aes_impl!(Aes192Encrypt, Encryption, 12, 24)
-define_aes_impl!(Aes192Decrypt, Decryption, 12, 24)
-define_aes_enc!(Aes192Encrypt, 12)
-define_aes_dec!(Aes192Decrypt, 12)
-define_aes_init!(Aes192Encrypt, SymmetricCipher192, &[u8, ..24], Encryption, 12)
-define_aes_init!(Aes192Decrypt, SymmetricCipher192, &[u8, ..24], Decryption, 12)
-
-define_aes_struct!(Aes256Encrypt, 14)
-define_aes_struct!(Aes256Decrypt, 14)
-define_aes_impl!(Aes256Encrypt, Encryption, 14, 32)
-define_aes_impl!(Aes256Decrypt, Decryption, 14, 32)
-define_aes_enc!(Aes256Encrypt, 14)
-define_aes_dec!(Aes256Decrypt, 14)
-define_aes_init!(Aes256Encrypt, SymmetricCipher256, &[u8, ..32], Encryption, 14)
-define_aes_init!(Aes256Decrypt, SymmetricCipher256, &[u8, ..32], Decryption, 14)
+define_aes_struct!(AesDangerous256Encryptor, 14)
+define_aes_struct!(AesDangerous256Decryptor, 14)
+define_aes_impl!(AesDangerous256Encryptor, Encryption, 14, 32)
+define_aes_impl!(AesDangerous256Decryptor, Decryption, 14, 32)
+define_aes_enc!(AesDangerous256Encryptor, 14)
+define_aes_dec!(AesDangerous256Decryptor, 14)
 
 fn shift(r: u32, shift: u32) -> u32 {
-    return (r >> shift) | (r << -shift);
+    return (r >> shift) | (r << (32 - shift));
 }
 
 // multiply four bytes in GF(2^8) by 'x' {02} in parallel
@@ -191,66 +167,14 @@ fn setup_working_key(key: &[u8], rounds: uint, key_type: KeyType, W: &mut [[u32,
     }
 }
 
-fn unpack(input: &[u8, ..16]) -> (u32, u32, u32, u32) {
-    let C0 =
-        (input[0] as u32) |
-        (input[1] as u32) << 8 |
-        (input[2] as u32) << 16 |
-        (input[3] as u32) << 24;
+fn encrypt_block(rounds: uint, input: &[u8], KW: &[[u32, ..4]], output: &mut [u8]) {
+   let mut c = [0u32, ..4];
+    read_u32v_le(c, input);
 
-    let C1 =
-        (input[4] as u32) |
-        (input[5] as u32) << 8 |
-        (input[6] as u32) << 16 |
-        (input[7] as u32) << 24;
-
-    let C2 =
-        (input[8] as u32) |
-        (input[9] as u32) << 8 |
-        (input[10] as u32) << 16 |
-        (input[11] as u32) << 24;
-
-    let C3 =
-        (input[12] as u32) |
-        (input[13] as u32) << 8 |
-        (input[14] as u32) << 16 |
-        (input[15] as u32) << 24;
-
-    return (C0, C1, C2, C3);
-}
-
-fn pack(C0: u32, C1: u32, C2: u32, C3: u32) -> [u8, ..16] {
-    let mut out = [0u8, ..16];
-
-    out[0] = C0 as u8;
-    out[1] = (C0 >> 8) as u8;
-    out[2] = (C0 >> 16) as u8;
-    out[3] = (C0 >> 24) as u8;
-
-    out[4] = C1 as u8;
-    out[5] = (C1 >> 8) as u8;
-    out[6] = (C1 >> 16) as u8;
-    out[7] = (C1 >> 24) as u8;
-
-    out[8] = C2 as u8;
-    out[9] = (C2 >> 8) as u8;
-    out[10] = (C2 >> 16) as u8;
-    out[11] = (C2 >> 24) as u8;
-
-    out[12] = C3 as u8;
-    out[13] = (C3 >> 8) as u8;
-    out[14] = (C3 >> 16) as u8;
-    out[15] = (C3 >> 24) as u8;
-
-    return out;
-}
-
-fn encrypt_block(rounds: uint, input: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..16] {
-    let (C0, C1, C2, C3) = unpack(input);
-    let mut C0 = C0;
-    let mut C1 = C1;
-    let mut C2 = C2;
-    let mut C3 = C3;
+    let mut C0 = c[0];
+    let mut C1 = c[1];
+    let mut C2 = c[2];
+    let mut C3 = c[3];
 
     C0 ^= KW[0][0];
     C1 ^= KW[0][1];
@@ -345,16 +269,21 @@ fn encrypt_block(rounds: uint, input: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..
     C3 ^= ((S[(r2>>24) & 0xff] as u32)<<24);
     C3 ^= KW[r][3];
 
-    return pack(C0, C1, C2, C3);
+    write_u32_le(output.mut_slice(0, 4), C0);
+    write_u32_le(output.mut_slice(4, 8), C1);
+    write_u32_le(output.mut_slice(8, 12), C2);
+    write_u32_le(output.mut_slice(12, 16), C3);
 }
 
 
-fn decrypt_block(rounds: uint, input: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..16] {
-    let (C0, C1, C2, C3) = unpack(input);
-    let mut C0 = C0;
-    let mut C1 = C1;
-    let mut C2 = C2;
-    let mut C3 = C3;
+fn decrypt_block(rounds: uint, input: &[u8], KW: &[[u32, ..4]], output: &mut [u8]) {
+    let mut c = [0u32, ..4];
+    read_u32v_le(c, input);
+
+    let mut C0 = c[0];
+    let mut C1 = c[1];
+    let mut C2 = c[2];
+    let mut C3 = c[3];
 
     C0 ^= KW[rounds][0];
     C1 ^= KW[rounds][1];
@@ -467,7 +396,10 @@ fn decrypt_block(rounds: uint, input: &[u8, ..16], KW: &[[u32, ..4]]) -> [u8, ..
     C3 ^= ((Si[(r0>>24) & 0xff] as u32)<<24);
     C3 ^= KW[0][3];
 
-    return pack(C0, C1, C2, C3);
+    write_u32_le(output.mut_slice(0, 4), C0);
+    write_u32_le(output.mut_slice(4, 8), C1);
+    write_u32_le(output.mut_slice(8, 12), C2);
+    write_u32_le(output.mut_slice(12, 16), C3);
 }
 
 // The S box

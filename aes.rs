@@ -240,6 +240,7 @@ define_dec!(
 mod test {
     use aes::*;
     use aesni::*;
+    use aesdangerous::*;
     use aessafe::*;
     use symmetriccipher::*;
     use util::*;
@@ -450,6 +451,37 @@ mod test {
 
 
     #[test]
+    fn testAesDangerous128() {
+        let tests = tests128();
+        for t in tests.iter() {
+            let mut enc = AesDangerous128Encryptor::new(t.key);
+            let mut dec = AesDangerous128Decryptor::new(t.key);
+            run_test(&mut enc, &mut dec, t);
+        }
+    }
+
+    #[test]
+    fn testAesDangerous192() {
+        let tests = tests192();
+        for t in tests.iter() {
+            let mut enc = AesDangerous192Encryptor::new(t.key);
+            let mut dec = AesDangerous192Decryptor::new(t.key);
+            run_test(&mut enc, &mut dec, t);
+        }
+    }
+
+    #[test]
+    fn testAesDangerous256() {
+        let tests = tests256();
+        for t in tests.iter() {
+            let mut enc = AesDangerous256Encryptor::new(t.key);
+            let mut dec = AesDangerous256Decryptor::new(t.key);
+            run_test(&mut enc, &mut dec, t);
+        }
+    }
+
+
+    #[test]
     fn testAesSafe128() {
         let tests = tests128();
         for t in tests.iter() {
@@ -485,6 +517,8 @@ mod bench {
     use extra::test::BenchHarness;
 
     use aes::*;
+    use aesdangerous::*;
+    use aessafe::*;
     use symmetriccipher::*;
 
     #[bench]
@@ -492,7 +526,7 @@ mod bench {
         let key: [u8, ..16] = [1u8, ..16];
         let plain: [u8, ..16] = [2u8, ..16];
 
-        let a = Aes128Encryptor::new(key);
+        let a = AesSafe128Encryptor::new(key);
 
         let mut tmp = [0u8, ..16];
 

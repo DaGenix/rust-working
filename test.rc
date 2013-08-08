@@ -7,7 +7,7 @@ extern mod extra;
 mod digest;
 
 pub mod aes;
-// pub mod aesdangerous;
+pub mod aesdangerous;
 pub mod aessafe;
 
 #[cfg(target_arch = "x86")]
