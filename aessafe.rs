@@ -198,16 +198,16 @@ fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8
 
     let mut r = 1;
     while (r < rounds - 1) {
-        unpack(Sbox(pack(c0, c1)), &mut c0, &mut c1);
-        unpack(Sbox(pack(c2, c3)), &mut c2, &mut c3);
+        let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(c0, c1, c2, c3)));
+        c0 = t0; c1 = t1; c2 = t2; c3 = t3;
         let mut r0 = op(c0, c1, c2, c3, rk[r][0]);
         let mut r1 = op(c1, c2, c3, c0, rk[r][1]);
         let mut r2 = op(c2, c3, c0, c1, rk[r][2]);
         let mut r3 = op(c3, c0, c1, c2, rk[r][3]);
         r += 1;
 
-        unpack(Sbox(pack(r0, r1)), &mut r0, &mut r1);
-        unpack(Sbox(pack(r2, r3)), &mut r2, &mut r3);
+        let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(r0, r1, r2, r3)));
+        r0 = t0; r1 = t1; r2 = t2; r3 = t3;
         c0 = op(r0, r1, r2, r3, rk[r][0]);
         c1 = op(r1, r2, r3, r0, rk[r][1]);
         c2 = op(r2, r3, r0, r1, rk[r][2]);
@@ -215,16 +215,16 @@ fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8
         r += 1;
     }
 
-    unpack(Sbox(pack(c0, c1)), &mut c0, &mut c1);
-    unpack(Sbox(pack(c2, c3)), &mut c2, &mut c3);
+    let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(c0, c1, c2, c3)));
+    c0 = t0; c1 = t1; c2 = t2; c3 = t3;
     let mut r0 = op(c0, c1, c2, c3, rk[r][0]);
     let mut r1 = op(c1, c2, c3, c0, rk[r][1]);
     let mut r2 = op(c2, c3, c0, c1, rk[r][2]);
     let mut r3 = op(c3, c0, c1, c2, rk[r][3]);
     r += 1;
 
-    unpack(Sbox(pack(r0, r1)), &mut r0, &mut r1);
-    unpack(Sbox(pack(r2, r3)), &mut r2, &mut r3);
+    let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(r0, r1, r2, r3)));
+    r0 = t0; r1 = t1; r2 = t2; r3 = t3;
     c0 = op_end(r0, r1, r2, r3, rk[r][0]);
     c1 = op_end(r1, r2, r3, r0, rk[r][1]);
     c2 = op_end(r2, r3, r0, r1, rk[r][2]);
@@ -370,152 +370,304 @@ static RCON: [u32, ..10] = [
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // to convert between polynomial (A^7...1) basis A & normal basis X
 // or to basis S which incorporates bit matrix of Sbox
-static A2X: [u64, ..8] = [0x9898989898989898, 0xF3F3F3F3F3F3F3F3, 0xF2F2F2F2F2F2F2F2, 0x4848484848484848, 0x0909090909090909, 0x8181818181818181, 0xA9A9A9A9A9A9A9A9, 0xFFFFFFFFFFFFFFFF];
-static X2A: [u64, ..8] = [0x6464646464646464, 0x7878787878787878, 0x6E6E6E6E6E6E6E6E, 0x8C8C8C8C8C8C8C8C, 0x6868686868686868, 0x2929292929292929, 0xDEDEDEDEDEDEDEDE, 0x6060606060606060];
-static X2S: [u64, ..8] = [0x5858585858585858, 0x2D2D2D2D2D2D2D2D, 0x9E9E9E9E9E9E9E9E, 0x0B0B0B0B0B0B0B0B, 0xDCDCDCDCDCDCDCDC, 0x0404040404040404, 0x0303030303030303, 0x2424242424242424];
-static S2X: [u64, ..8] = [0x8C8C8C8C8C8C8C8C, 0x7979797979797979, 0x0505050505050505, 0xEBEBEBEBEBEBEBEB, 0x1212121212121212, 0x0404040404040404, 0x5151515151515151, 0x5353535353535353];
+static A2X_new: [[u32, ..8], ..8] = [
+    [0, 0, 0, -1, -1, 0, 0, -1],
+    [-1, -1, 0, 0, -1, -1, -1, -1],
+    [0, -1, 0, 0, -1, -1, -1, -1],
+    [0, 0, 0, -1, 0, 0, -1, 0],
+    [-1, 0, 0, -1, 0, 0, 0, 0],
+    [-1, 0, 0, 0, 0, 0, 0, -1],
+    [-1, 0, 0, -1, 0, -1, 0, -1],
+    [-1, -1, -1, -1, -1, -1, -1, -1]
+];
+static X2A_new: [[u32, ..8], ..8] = [
+    [0, 0, -1, 0, 0, -1, -1, 0],
+    [0, 0, 0, -1, -1, -1, -1, 0],
+    [0, -1, -1, -1, 0, -1, -1, 0],
+    [0, 0, -1, -1, 0, 0, 0, -1],
+    [0, 0, 0, -1, 0, -1, -1, 0],
+    [-1, 0, 0, -1, 0, -1, 0, 0],
+    [0, -1, -1, -1, -1, 0, -1, -1],
+    [0, 0, 0, 0, 0, -1, -1, 0],
+];
+static X2S_new: [[u32, ..8], ..8] = [
+    [0, 0, 0, -1, -1, 0, -1, 0],
+    [-1, 0, -1, -1, 0, -1, 0, 0],
+    [0, -1, -1, -1, -1, 0, 0, -1],
+    [-1, -1, 0, -1, 0, 0, 0, 0],
+    [0, 0, -1, -1, -1, 0, -1, -1],
+    [0, 0, -1, 0, 0, 0, 0, 0],
+    [-1, -1, 0, 0, 0, 0, 0, 0],
+    [0, 0, -1, 0, 0, -1, 0, 0],
+];
+static S2X_new: [[u32, ..8], ..8] = [
+    [0, 0, -1, -1, 0, 0, 0, -1],
+    [-1, 0, 0, -1, -1, -1, -1, 0],
+    [-1, 0, -1, 0, 0, 0, 0, 0],
+    [-1, -1, 0, -1, 0, -1, -1, -1],
+    [0, -1, 0, 0, -1, 0, 0, 0],
+    [0, 0, -1, 0, 0, 0, 0, 0],
+    [-1, 0, 0, 0, -1, 0, -1, 0],
+    [-1, -1, 0, 0, -1, 0, -1, 0],
+];
 
 // multiply in GF(2^2), using normal basis (Omega^2,Omega)
-fn G4_mul(x: u64, y: u64) -> u64 {
-    let a = (x & 0x0202020202020202) >> 1;
-    let b = (x & 0x0101010101010101);
-    let c = (y & 0x0202020202020202) >> 1;
-    let d = (y & 0x0101010101010101);
+fn g4_mul(x: bs2_state, y: bs2_state) -> bs2_state {
+    let (b, a) = x;
+    let (d, c) = y;
     let e = (a ^ b) & (c ^ d);
     let p = (a & c) ^ e;
     let q = (b & d) ^ e;
-    return (p << 1) | q;
+    return (q, p);
 }
 
 // scale by N = Omega^2 in GF(2^2), using normal basis (Omega^2,Omega)
-fn G4_scl_N(x: u64) -> u64 {
-    let a = (x & 0x0202020202020202) >> 1;
-    let b = (x & 0x0101010101010101);
+fn g4_scl_n(x: bs2_state) -> bs2_state {
+    let (b, a) = x;
     let p = b;
     let q = a ^ b;
-    return (p << 1) | q;
+    return (q, p);
 }
 
 // scale by N^2 = Omega in GF(2^2), using normal basis (Omega^2,Omega)
-fn G4_scl_N2(x: u64) -> u64 {
-    let a = (x & 0x0202020202020202) >> 1;
-    let b = (x & 0x0101010101010101);
+fn g4_scl_n2(x: bs2_state) -> bs2_state {
+    let (b, a) = x;
     let p = a ^ b;
     let q = a;
-    return (p << 1) | q;
+    return (q, p);
 }
 
 // square in GF(2^2), using normal basis (Omega^2,Omega)
 // NOTE: inverse is identical
-fn G4_sq(x: u64) -> u64 {
-    let a = (x & 0x0202020202020202) >> 1;
-    let b = (x & 0x0101010101010101);
-    return (b << 1) | a;
+fn g4_sq(x: bs2_state) -> bs2_state {
+    let (b, a) = x;
+    return (a, b);
 }
 
-fn G4_inv(x: u64) -> u64 {
+fn g4_inv(x: bs2_state) -> bs2_state {
     // Same as sqaure
-    return G4_sq(x);
+    return g4_sq(x);
 }
 
 // multiply in GF(2^4), using normal basis (alpha^8,alpha^2)
-fn G16_mul(x: u64, y: u64) -> u64 {
-    let a = (x & 0x0C0C0C0C0C0C0C0C) >> 2;
-    let b = (x & 0x0303030303030303);
-    let c = (y & 0x0C0C0C0C0C0C0C0C) >> 2;
-    let d = (y & 0x0303030303030303);
-    let e = G4_mul(a ^ b, c ^ d);
-    let e = G4_scl_N(e);
-    let p = G4_mul(a, c) ^ e;
-    let q = G4_mul(b, d) ^ e;
-    return (p << 2) | q;
+fn g16_mul(x: bs4_state, y: bs4_state) -> bs4_state {
+    let (b, a) = bs4_split(x);
+    let (d, c) = bs4_split(y);
+    let e = g4_mul(bs2_xor(a, b), bs2_xor(c, d));
+    let e = g4_scl_n(e);
+    let p = bs2_xor(g4_mul(a, c), e);
+    let q = bs2_xor(g4_mul(b, d), e);
+    return bs2_join(q, p);
 }
 
 // square & scale by nu in GF(2^4)/GF(2^2), normal basis (alpha^8,alpha^2)
 // nu = beta^8 = N^2*alpha^2, N = w^2 */
-fn G16_sq_scl(x: u64) -> u64 {
-    let a = (x & 0x0C0C0C0C0C0C0C0C) >> 2;
-    let b = (x & 0x0303030303030303);
-    let p = G4_sq(a ^ b);
-    let q = G4_scl_N2(G4_sq(b));
-    return (p << 2) | q;
+fn g16_sq_scl(x: bs4_state) -> bs4_state {
+    let (b, a) = bs4_split(x);
+    let p = g4_sq(bs2_xor(a, b));
+    let q = g4_scl_n2(g4_sq(b));
+    return bs2_join(q, p);
 }
 
 // inverse in GF(2^4), using normal basis (alpha^8,alpha^2)
-fn G16_inv(x: u64) -> u64 {
-    let a = (x & 0x0C0C0C0C0C0C0C0C) >> 2;
-    let b = (x & 0x0303030303030303);
-    let c = G4_scl_N(G4_sq(a ^ b));
-    let d = G4_mul(a, b);
-    let e = G4_inv(c ^ d);
-    let p = G4_mul(e, b);
-    let q = G4_mul(e, a);
-    return (p <<2 ) | q;
+fn g16_inv(x: bs4_state) -> bs4_state {
+    let (b, a) = bs4_split(x);
+    let c = g4_scl_n(g4_sq(bs2_xor(a, b)));
+    let d = g4_mul(a, b);
+    let e = g4_inv(bs2_xor(c, d));
+    let p = g4_mul(e, b);
+    let q = g4_mul(e, a);
+    return bs2_join(q, p);
 }
 
 // inverse in GF(2^8), using normal basis (d^16,d)
-fn G256_inv(x: u64) -> u64 {
-    let a = (x & 0xF0F0F0F0F0F0F0F0) >> 4;
-    let b = (x & 0x0F0F0F0F0F0F0F0F);
-    let c = G16_sq_scl(a ^ b);
-    let d = G16_mul(a, b);
-    let e = G16_inv(c ^ d);
-    let p = G16_mul(e, b);
-    let q = G16_mul(e, a);
-    return (p << 4) | q;
+fn g256_inv(x: bs8_state) -> bs8_state {
+    let (b, a) = bs8_split(x);
+    let c = g16_sq_scl(bs4_xor(a, b));
+    let d = g16_mul(a, b);
+    let e = g16_inv(bs4_xor(c, d));
+    let p = g16_mul(e, b);
+    let q = g16_mul(e, a);
+    return bs4_join(q, p);
 }
 
-fn helper(mut x: u64, b: &[u64, ..8]) -> u64 {
-    let mut i = 7;
-    let mut y = 0;
-    while i >= 0 {
-        if (x & 1) != 0 {
-            y ^= b[i];
-        }
-        x >>= 1;
-        i -= 1;
-    }
-    return y & 0xFF;
-}
+fn bs_newbasis(bs: bs8_state, arr: &[[u32, ..8], ..8]) -> bs8_state {
+    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
 
-// convert to new basis in GF(2^8)
-// i.e., bit matrix multiply
-fn G256_newbasis(x: u64, k: &[u64, ..8]) -> u64 {
-    let a = helper((x & 0x00000000000000FF), k);
-    let b = helper((x & 0x000000000000FF00) >> 8, k) << 8;
-    let c = helper((x & 0x0000000000FF0000) >> 16, k) << 16;
-    let d = helper((x & 0x00000000FF000000) >> 24, k) << 24;
-    let e = helper((x & 0x000000FF00000000) >> 32, k) << 32;
-    let f = helper((x & 0x0000FF0000000000) >> 40, k) << 40;
-    let g = helper((x & 0x00FF000000000000) >> 48, k) << 48;
-    let h = helper((x & 0xFF00000000000000) >> 56, k) << 56;
-    let t = a | b | c | d | e | f | g | h;
-    return t;
+    let mut bs0_out = 0;
+    let mut bs1_out = 0;
+    let mut bs2_out = 0;
+    let mut bs3_out = 0;
+    let mut bs4_out = 0;
+    let mut bs5_out = 0;
+    let mut bs6_out = 0;
+    let mut bs7_out = 0;
+
+    macro_rules! helper( ($bs:ident, $idx:expr) => (
+            {
+                bs0_out ^= $bs & arr[7 - $idx][0];
+                bs1_out ^= $bs & arr[7 - $idx][1];
+                bs2_out ^= $bs & arr[7 - $idx][2];
+                bs3_out ^= $bs & arr[7 - $idx][3];
+                bs4_out ^= $bs & arr[7 - $idx][4];
+                bs5_out ^= $bs & arr[7 - $idx][5];
+                bs6_out ^= $bs & arr[7 - $idx][6];
+                bs7_out ^= $bs & arr[7 - $idx][7];
+            }
+        )
+    )
+
+    helper!(bs0, 0);
+    helper!(bs1, 1);
+    helper!(bs2, 2);
+    helper!(bs3, 3);
+    helper!(bs4, 4);
+    helper!(bs5, 5);
+    helper!(bs6, 6);
+    helper!(bs7, 7);
+
+    return (bs0_out, bs1_out, bs2_out, bs3_out, bs4_out, bs5_out, bs6_out, bs7_out);
 }
 
 // find Sbox of n in GF(2^8) mod POLY
-fn Sbox(n: u64) -> u64 {
-    let mut t = G256_newbasis(n, &A2X);
-    t = G256_inv(t);
-    t = G256_newbasis(t, &X2S);
-    return t ^ 0x6363636363636363;
+fn sbox_bs(bs: bs8_state) -> bs8_state {
+    let nb = bs_newbasis(bs, &A2X_new);
+    let inv = g256_inv(nb);
+    let nb2 = bs_newbasis(inv, &X2S_new);
+    return bs8_xor(nb2, (-1, -1, 0, 0, 0, -1, -1, 0));
 }
 
 // find inverse Sbox of n in GF(2^8) mod POLY
-fn iSbox(n: u64) -> u64 {
-    let mut t = G256_newbasis(n, &S2X);
-    t = G256_inv(t);
-    t = G256_newbasis(t, &X2A);
-    return t ^ 0x6363636363636363;
+fn isbox_bs(bs: bs8_state) -> bs8_state {
+    let nb = bs_newbasis(bs, &S2X_new);
+    let inv = g256_inv(nb);
+    let nb2 = bs_newbasis(inv, &X2A_new);
+    return bs8_xor(nb2, (-1, -1, 0, 0, 0, -1, -1, 0));
 }
 
-fn pack(a: u32, b: u32) -> u64 {
-    return (a as u64) << 32 | (b as u64);
+
+type bs8_state = (u32, u32, u32, u32, u32, u32, u32, u32);
+type bs4_state = (u32, u32, u32, u32);
+type bs2_state = (u32, u32);
+
+fn pick(x: u32, bit: u32, shift: u32) -> u32 {
+    ((x >> bit) & 1) << shift
 }
 
-fn unpack(x: u64, outa: &mut u32, outb: &mut u32) {
-    *outa = (x >> 32) as u32;
-    *outb = x as u32;
+fn construct(a: u32, b: u32, c: u32, d: u32, bit: u32) -> u32 {
+    pick(a, bit, 0)  | pick(a, bit + 8, 1)  | pick(a, bit + 16, 2)  | pick(a, bit + 24, 3) |
+    pick(b, bit, 4)  | pick(b, bit + 8, 5)  | pick(b, bit + 16, 6)  | pick(b, bit + 24, 7) |
+    pick(c, bit, 8)  | pick(c, bit + 8, 9)  | pick(c, bit + 16, 10) | pick(c, bit + 24, 11) |
+    pick(d, bit, 12) | pick(d, bit + 8, 13) | pick(d, bit + 16, 14) | pick(d, bit + 24, 15)
+}
+
+fn bs8(a: u32, b: u32, c: u32, d: u32) -> bs8_state {
+    let bs0 = construct(a, b, c, d, 0);
+    let bs1 = construct(a, b, c, d, 1);
+    let bs2 = construct(a, b, c, d, 2);
+    let bs3 = construct(a, b, c, d, 3);
+    let bs4 = construct(a, b, c, d, 4);
+    let bs5 = construct(a, b, c, d, 5);
+    let bs6 = construct(a, b, c, d, 6);
+    let bs7 = construct(a, b, c, d, 7);
+    return (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7);
+}
+
+fn deconstruct(bs: bs8_state, bit: u32) -> u32 {
+    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
+
+    pick(bs0, bit, 0) | pick(bs1, bit, 1) | pick(bs2, bit, 2) | pick(bs3, bit, 3) |
+    pick(bs4, bit, 4) | pick(bs5, bit, 5) | pick(bs6, bit, 6) | pick(bs7, bit, 7) |
+
+    pick(bs0, bit + 1, 8) | pick(bs1, bit + 1, 9) | pick(bs2, bit + 1, 10) | pick(bs3, bit + 1, 11) |
+    pick(bs4, bit + 1, 12) | pick(bs5, bit + 1, 13) | pick(bs6, bit + 1, 14) | pick(bs7, bit + 1, 15) |
+
+    pick(bs0, bit + 2, 16) | pick(bs1, bit + 2, 17) | pick(bs2, bit + 2, 18) | pick(bs3, bit + 2, 19) |
+    pick(bs4, bit + 2, 20) | pick(bs5, bit + 2, 21) | pick(bs6, bit + 2, 22) | pick(bs7, bit + 2, 23) |
+
+    pick(bs0, bit + 3, 24) | pick(bs1, bit + 3, 25) | pick(bs2, bit + 3, 26) | pick(bs3, bit + 3, 27) |
+    pick(bs4, bit + 3, 28) | pick(bs5, bit + 3, 29) | pick(bs6, bit + 3, 30) | pick(bs7, bit + 3, 31)
+}
+
+fn un_bs8(bs: bs8_state) -> (u32, u32, u32, u32) {
+    let a0 = deconstruct(bs, 0);
+    let a1 = deconstruct(bs, 4);
+    let a2 = deconstruct(bs, 8);
+    let a3 = deconstruct(bs, 12);
+    return (a0, a1, a2, a3);
+}
+
+
+fn bs4(x: u32) -> bs4_state {
+    return (x & 1, (x >> 1) & 1, (x >> 2) & 1, (x >> 3) & 1);
+}
+
+fn un_bs4(bs: bs4_state) -> u32 {
+    let (bs0, bs1, bs2, bs3) = bs;
+    return (bs0 & 1) | ((bs1 & 1) << 1) | ((bs2 & 1) << 2) | ((bs3 & 1) << 3);
+}
+
+fn bs2(x: u32) -> bs2_state {
+    return (x & 1, (x >> 1) & 1);
+}
+
+fn un_bs2(bs: bs2_state) -> u32 {
+    let (bs0, bs1) = bs;
+    return (bs0 & 1) | ((bs1 & 1) << 1);
+}
+
+fn bs8_split(bs8: bs8_state) -> (bs4_state, bs4_state) {
+    match bs8 {
+        (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) => ((bs0, bs1, bs2, bs3), (bs4, bs5, bs6, bs7))
+    }
+}
+
+fn bs4_split(bs4: bs4_state) -> (bs2_state, bs2_state) {
+    match bs4 {
+        (bs0, bs1, bs2, bs3) => ((bs0, bs1), (bs2, bs3))
+    }
+}
+
+fn bs8_xor(a: bs8_state, b: bs8_state) -> bs8_state {
+    let (a0, a1, a2, a3, a4, a5, a6, a7) = a;
+    let (b0, b1, b2, b3, b4, b5, b6, b7) = b;
+    (a0 ^ b0, a1 ^ b1, a2 ^ b2, a3 ^ b3, a4 ^ b4, a5 ^ b5, a6 ^ b6, a7 ^ b7)
+}
+
+fn bs4_xor(a: bs4_state, b: bs4_state) -> bs4_state {
+    let (a0, a1, a2, a3) = a;
+    let (b0, b1, b2, b3) = b;
+    (a0 ^ b0, a1 ^ b1, a2 ^ b2, a3 ^ b3)
+}
+
+fn bs2_xor(a: bs2_state, b: bs2_state) -> bs2_state {
+    let (a0, a1) = a;
+    let (b0, b1) = b;
+    (a0 ^ b0, a1 ^ b1)
+}
+
+fn bs4_join(a: bs4_state, b: bs4_state) -> bs8_state {
+    let (a0, a1, a2, a3) = a;
+    let (b0, b1, b2, b3) = b;
+    (a0, a1, a2, a3, b0, b1, b2, b3)
+}
+
+fn bs2_join(a: bs2_state, b: bs2_state) -> bs4_state {
+    let (a0, a1) = a;
+    let (b0, b1) = b;
+    (a0, a1, b0, b1)
 }
