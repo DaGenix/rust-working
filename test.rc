@@ -19,3 +19,24 @@ mod blockmodes;
 mod cryptoutil;
 
 pub mod util;
+
+
+/*
+fn main() {
+    use aes::*;
+    use aesdangerous::*;
+    use aessafe::*;
+    use symmetriccipher::*;
+
+    let key: [u8, ..16] = [1u8, ..16];
+    let plain: [u8, ..16] = [2u8, ..16];
+
+    let a = AesDangerous128Encryptor::new(key);
+
+    let mut tmp = [0u8, ..16];
+
+    for _ in range(0, 1024 * 1024) {
+        a.encrypt_block(plain, tmp);
+    }
+}
+*/

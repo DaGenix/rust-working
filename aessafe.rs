@@ -20,7 +20,8 @@ macro_rules! define_aes_struct(
         $rounds:expr
     ) => (
         struct $name {
-            round_keys: [[u32, ..4], ..$rounds + 1]
+            round_keys: [[u32, ..4], ..$rounds + 1],
+            sk: [bs8_state, ..$rounds + 1]
         }
     )
 )
@@ -35,9 +36,10 @@ macro_rules! define_aes_impl(
         impl $name {
             pub fn new(key: &[u8]) -> $name {
                 let mut a =  $name {
-                    round_keys: [[0u32, ..4], ..$rounds + 1]
+                    round_keys: [[0u32, ..4], ..$rounds + 1],
+                    sk: [(0,0,0,0,0,0,0,0), ..$rounds + 1]
                 };
-                setup_round_keys(key, $mode, a.round_keys);
+                setup_round_keys(key, $mode, a.round_keys, a.sk);
                 return a;
             }
         }
@@ -51,7 +53,7 @@ macro_rules! define_aes_enc(
     ) => (
         impl BlockEncryptor for $name {
             fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
-                encrypt_block($rounds, input, self.round_keys, output);
+                encrypt_block($rounds, input, self.sk, output);
             }
         }
     )
@@ -129,7 +131,7 @@ enum KeyType {
     Decryption
 }
 
-fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]) {
+fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]], sk: &mut [bs8_state]) {
     let (key_words, rounds) = match key.len() {
         16 => (4, 10u),
         24 => (6, 12u),
@@ -161,6 +163,10 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
         round_keys[i / 4][i % 4] = round_keys[(i - key_words) / 4][(i - key_words) % 4] ^ temp;
     }
 
+    for i in range(0, rounds + 1) {
+        sk[i] = bs8(round_keys[i][0], round_keys[i][1], round_keys[i][2], round_keys[i][3])
+    }
+
     // Decryption round keys require extra processing
     match key_type {
         Decryption => {
@@ -174,13 +180,166 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
     }
 }
 
+fn shift_rows(bs: bs8_state) -> bs8_state {
+    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
+
+    fn sr(x: u32) -> u32 {
+        // first 4 bits represent first row - don't shift
+        (x & 0x000f) |
+        // next 4 bits represent 2nd row - left rotate 1 bit
+        ((x & 0x00e0) >> 1) | ((x & 0x0010) << 3) |
+        // next 4 bits represent 3rd row - left rotate 2 bits
+        ((x & 0x0c00) >> 2) | ((x & 0x0300) << 2) |
+        // next 4 bits represent 4th row - left rotate 3 bits
+        ((x & 0x8000) >> 3) | ((x & 0x7000) << 1)
+    }
+
+    (sr(bs0), sr(bs1), sr(bs2), sr(bs3), sr(bs4), sr(bs5), sr(bs6), sr(bs7))
+}
+
+fn mix_columns(bs: bs8_state) -> bs8_state {
+    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
+
+    fn rl4(x: u32) -> u32 {
+        ((x >> 4) & 0x0fff) | (x << 12)
+    }
+
+    fn rl8(x: u32) -> u32 {
+        ((x >> 8) & 0x00ff) | (x << 8)
+    }
+
+    let bs0out = (bs7 ^ rl4(bs7)) ^ rl4(bs0) ^ rl8(bs0 ^ rl4(bs0));
+    let bs1out = (bs0 ^ rl4(bs0)) ^ (bs7 ^ rl4(bs7)) ^ rl4(bs1) ^ rl8(bs1 ^ rl4(bs1));
+    let bs2out = (bs1 ^ rl4(bs1)) ^ rl4(bs2) ^ rl8(bs2 ^ rl4(bs2));
+    let bs3out = (bs2 ^ rl4(bs2)) ^ (bs7 ^ rl4(bs7)) ^ rl4(bs3) ^ rl8(bs3 ^ rl4(bs3));
+    let bs4out = (bs3 ^ rl4(bs3)) ^ (bs7 ^ rl4(bs7)) ^ rl4(bs4) ^ rl8(bs4 ^ rl4(bs4));
+    let bs5out = (bs4 ^ rl4(bs4)) ^ rl4(bs5) ^ rl8(bs5 ^ rl4(bs5));
+    let bs6out = (bs5 ^ rl4(bs5)) ^ rl4(bs6) ^ rl8(bs6 ^ rl4(bs6));
+    let bs7out = (bs6 ^ rl4(bs6)) ^ rl4(bs7) ^ rl8(bs7 ^ rl4(bs7));
+
+    (bs0out, bs1out, bs2out, bs3out, bs4out, bs5out, bs6out, bs7out)
+}
+
+fn encrypt_block(rounds: uint, input: &[u8], sk: &[bs8_state], output: &mut [u8]) {
+    let mut c = [0u32, ..4];
+    read_u32v_le(c, input);
+
+    let mut bs = bs8(c[0], c[1], c[2], c[3]);
+
+    // Round 0 - add round key
+    bs = bs8_xor(bs, sk[0]);
+
+    // Remaining rounds (except last round)
+    for i in range(1, rounds) {
+        bs = sbox_bs(bs);
+        bs = shift_rows(bs);
+        bs = mix_columns(bs);
+        bs = bs8_xor(bs, sk[i]);
+    }
+
+    // Last round
+    bs = sbox_bs(bs);
+    bs = shift_rows(bs);
+    bs = bs8_xor(bs, sk[rounds]);
+
+    let (c0, c1, c2, c3) = un_bs8(bs);
+
+    write_u32_le(output.mut_slice(0, 4), c0);
+    write_u32_le(output.mut_slice(4, 8), c1);
+    write_u32_le(output.mut_slice(8, 12), c2);
+    write_u32_le(output.mut_slice(12, 16), c3);
+}
+
+#[cfg(slow)]
+fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8]) {
+    fn sr(a: u32, b: u32, c: u32, d: u32) -> (u32, u32, u32, u32) {
+        let w = (a & 0xff) | (b & 0xff00) | (c & 0xff0000) | (d & 0xff000000);
+        let x = (b & 0xff) | (c & 0xff00) | (d & 0xff0000) | (a & 0xff000000);
+        let y = (c & 0xff) | (d & 0xff00) | (a & 0xff0000) | (b & 0xff000000);
+        let z = (d & 0xff) | (a & 0xff00) | (b & 0xff0000) | (c & 0xff000000);
+        (w, x, y, z)
+    }
+
+    fn d(c0: u32, c1: u32, c2: u32, c3: u32) {
+        printfln!("a: %x", c0 as uint);
+        printfln!("b: %x", c1 as uint);
+        printfln!("c: %x", c2 as uint);
+        printfln!("d: %x", c3 as uint);
+        println("");
+    }
+
+    let mut c = [0u32, ..4];
+    read_u32v_le(c, input);
+
+    let mut c0 = c[0];
+    let mut c1 = c[1];
+    let mut c2 = c[2];
+    let mut c3 = c[3];
+
+    c0 ^= rk[0][0];
+    c1 ^= rk[0][1];
+    c2 ^= rk[0][2];
+    c3 ^= rk[0][3];
+
+    for i in range(1, rounds) {
+        // sub bytes
+        let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(c0, c1, c2, c3)));
+        c0 = t0; c1 = t1; c2 = t2; c3 = t3;
+
+        // shift rows
+        let (t0, t1, t2, t3) = sr(c0, c1, c2, c3);
+        c0 = t0; c1 = t1; c2 = t2; c3 = t3;
+
+        // mix columns
+        c0 = mcol(c0);
+        c1 = mcol(c1);
+        c2 = mcol(c2);
+        c3 = mcol(c3);
+
+        // add round key
+        c0 ^= rk[i][0];
+        c1 ^= rk[i][1];
+        c2 ^= rk[i][2];
+        c3 ^= rk[i][3];
+    }
+
+    // sub bytes
+    let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(c0, c1, c2, c3)));
+    c0 = t0; c1 = t1; c2 = t2; c3 = t3;
+
+    // shift rows
+    let (t0, t1, t2, t3) = sr(c0, c1, c2, c3);
+    c0 = t0; c1 = t1; c2 = t2; c3 = t3;
+
+    // add round key
+    c0 ^= rk[rounds][0];
+    c1 ^= rk[rounds][1];
+    c2 ^= rk[rounds][2];
+    c3 ^= rk[rounds][3];
+
+    write_u32_le(output.mut_slice(0, 4), c0);
+    write_u32_le(output.mut_slice(4, 8), c1);
+    write_u32_le(output.mut_slice(8, 12), c2);
+    write_u32_le(output.mut_slice(12, 16), c3);
+}
+
+#[cfg(fast)]
 fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8]) {
     fn op(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
+        printfln!("x: %x", ((v & 0xff) ^ (x & 0xff00) ^ (y & 0xff0000) ^ (z & 0xff000000)) as uint);
         return mcol((v & 0xff) ^ (x & 0xff00) ^ (y & 0xff0000) ^ (z & 0xff000000)) ^ k;
     }
 
     fn op_end(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
         return (v & 0xff) ^ (x & 0xff00) ^ (y & 0xff0000) ^ (z & 0xff000000) ^ k;
+    }
+
+    fn d(c0: u32, c1: u32, c2: u32, c3: u32) {
+        printfln!("a: %x", c0 as uint);
+        printfln!("b: %x", c1 as uint);
+        printfln!("c: %x", c2 as uint);
+        printfln!("d: %x", c3 as uint);
+        println("");
     }
 
     let mut c = [0u32, ..4];
@@ -206,6 +365,9 @@ fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8
         let mut r3 = op(c3, c0, c1, c2, rk[r][3]);
         r += 1;
 
+        println("");
+//        d(r0, r1, r2, r3);
+
         let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(r0, r1, r2, r3)));
         r0 = t0; r1 = t1; r2 = t2; r3 = t3;
         c0 = op(r0, r1, r2, r3, rk[r][0]);
@@ -213,6 +375,9 @@ fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8
         c2 = op(r2, r3, r0, r1, rk[r][2]);
         c3 = op(r3, r0, r1, r2, rk[r][3]);
         r += 1;
+
+        println("");
+//        d(c0, c1, c2, c3);
     }
 
     let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(c0, c1, c2, c3)));
@@ -235,6 +400,7 @@ fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8
     write_u32_le(output.mut_slice(8, 12), c2);
     write_u32_le(output.mut_slice(12, 16), c3);
 }
+
 
 fn decrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8]) {
     fn op(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
@@ -569,10 +735,14 @@ fn pick(x: u32, bit: u32, shift: u32) -> u32 {
 }
 
 fn construct(a: u32, b: u32, c: u32, d: u32, bit: u32) -> u32 {
-    pick(a, bit, 0)  | pick(a, bit + 8, 1)  | pick(a, bit + 16, 2)  | pick(a, bit + 24, 3) |
-    pick(b, bit, 4)  | pick(b, bit + 8, 5)  | pick(b, bit + 16, 6)  | pick(b, bit + 24, 7) |
-    pick(c, bit, 8)  | pick(c, bit + 8, 9)  | pick(c, bit + 16, 10) | pick(c, bit + 24, 11) |
-    pick(d, bit, 12) | pick(d, bit + 8, 13) | pick(d, bit + 16, 14) | pick(d, bit + 24, 15)
+//     pick(a, bit, 0)  | pick(a, bit + 8, 1)  | pick(a, bit + 16, 2)  | pick(a, bit + 24, 3) |
+//     pick(b, bit, 4)  | pick(b, bit + 8, 5)  | pick(b, bit + 16, 6)  | pick(b, bit + 24, 7) |
+//     pick(c, bit, 8)  | pick(c, bit + 8, 9)  | pick(c, bit + 16, 10) | pick(c, bit + 24, 11) |
+//     pick(d, bit, 12) | pick(d, bit + 8, 13) | pick(d, bit + 16, 14) | pick(d, bit + 24, 15)
+    pick(a, bit, 0)       | pick(b, bit, 1)       | pick(c, bit, 2)       | pick(d, bit, 3)       |
+    pick(a, bit + 8, 4)   | pick(b, bit + 8, 5)   | pick(c, bit + 8, 6)   | pick(d, bit + 8, 7)   |
+    pick(a, bit + 16, 8)  | pick(b, bit + 16, 9)  | pick(c, bit + 16, 10) | pick(d, bit + 16, 11) |
+    pick(a, bit + 24, 12) | pick(b, bit + 24, 13) | pick(c, bit + 24, 14) | pick(d, bit + 24, 15)
 }
 
 fn bs8(a: u32, b: u32, c: u32, d: u32) -> bs8_state {
@@ -590,24 +760,36 @@ fn bs8(a: u32, b: u32, c: u32, d: u32) -> bs8_state {
 fn deconstruct(bs: bs8_state, bit: u32) -> u32 {
     let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
 
+//     pick(bs0, bit, 0) | pick(bs1, bit, 1) | pick(bs2, bit, 2) | pick(bs3, bit, 3) |
+//     pick(bs4, bit, 4) | pick(bs5, bit, 5) | pick(bs6, bit, 6) | pick(bs7, bit, 7) |
+//
+//     pick(bs0, bit + 1, 8) | pick(bs1, bit + 1, 9) | pick(bs2, bit + 1, 10) | pick(bs3, bit + 1, 11) |
+//     pick(bs4, bit + 1, 12) | pick(bs5, bit + 1, 13) | pick(bs6, bit + 1, 14) | pick(bs7, bit + 1, 15) |
+//
+//     pick(bs0, bit + 2, 16) | pick(bs1, bit + 2, 17) | pick(bs2, bit + 2, 18) | pick(bs3, bit + 2, 19) |
+//     pick(bs4, bit + 2, 20) | pick(bs5, bit + 2, 21) | pick(bs6, bit + 2, 22) | pick(bs7, bit + 2, 23) |
+//
+//     pick(bs0, bit + 3, 24) | pick(bs1, bit + 3, 25) | pick(bs2, bit + 3, 26) | pick(bs3, bit + 3, 27) |
+//     pick(bs4, bit + 3, 28) | pick(bs5, bit + 3, 29) | pick(bs6, bit + 3, 30) | pick(bs7, bit + 3, 31)
+
     pick(bs0, bit, 0) | pick(bs1, bit, 1) | pick(bs2, bit, 2) | pick(bs3, bit, 3) |
     pick(bs4, bit, 4) | pick(bs5, bit, 5) | pick(bs6, bit, 6) | pick(bs7, bit, 7) |
 
-    pick(bs0, bit + 1, 8) | pick(bs1, bit + 1, 9) | pick(bs2, bit + 1, 10) | pick(bs3, bit + 1, 11) |
-    pick(bs4, bit + 1, 12) | pick(bs5, bit + 1, 13) | pick(bs6, bit + 1, 14) | pick(bs7, bit + 1, 15) |
+    pick(bs0, bit + 4, 8)  | pick(bs1, bit + 4, 9)  | pick(bs2, bit + 4, 10) | pick(bs3, bit + 4, 11) |
+    pick(bs4, bit + 4, 12) | pick(bs5, bit + 4, 13) | pick(bs6, bit + 4, 14) | pick(bs7, bit + 4, 15) |
 
-    pick(bs0, bit + 2, 16) | pick(bs1, bit + 2, 17) | pick(bs2, bit + 2, 18) | pick(bs3, bit + 2, 19) |
-    pick(bs4, bit + 2, 20) | pick(bs5, bit + 2, 21) | pick(bs6, bit + 2, 22) | pick(bs7, bit + 2, 23) |
+    pick(bs0, bit + 8, 16) | pick(bs1, bit + 8, 17) | pick(bs2, bit + 8, 18) | pick(bs3, bit + 8, 19) |
+    pick(bs4, bit + 8, 20) | pick(bs5, bit + 8, 21) | pick(bs6, bit + 8, 22) | pick(bs7, bit + 8, 23) |
 
-    pick(bs0, bit + 3, 24) | pick(bs1, bit + 3, 25) | pick(bs2, bit + 3, 26) | pick(bs3, bit + 3, 27) |
-    pick(bs4, bit + 3, 28) | pick(bs5, bit + 3, 29) | pick(bs6, bit + 3, 30) | pick(bs7, bit + 3, 31)
+    pick(bs0, bit + 12, 24) | pick(bs1, bit + 12, 25) | pick(bs2, bit + 12, 26) | pick(bs3, bit + 12, 27) |
+    pick(bs4, bit + 12, 28) | pick(bs5, bit + 12, 29) | pick(bs6, bit + 12, 30) | pick(bs7, bit + 12, 31)
 }
 
 fn un_bs8(bs: bs8_state) -> (u32, u32, u32, u32) {
     let a0 = deconstruct(bs, 0);
-    let a1 = deconstruct(bs, 4);
-    let a2 = deconstruct(bs, 8);
-    let a3 = deconstruct(bs, 12);
+    let a1 = deconstruct(bs, 1);
+    let a2 = deconstruct(bs, 2);
+    let a3 = deconstruct(bs, 3);
     return (a0, a1, a2, a3);
 }
 

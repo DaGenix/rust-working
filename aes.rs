@@ -8,7 +8,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[cfg(target_arch = "x86")]
+#[cfg(target_arch = "x86_64")]
 use aesni::*;
+
 use aessafe::*;
 use symmetriccipher::*;
 use util::*;
@@ -239,7 +242,11 @@ define_dec!(
 #[cfg(test)]
 mod test {
     use aes::*;
+
+    #[cfg(target_arch = "x86")]
+    #[cfg(target_arch = "x86_64")]
     use aesni::*;
+
     use aesdangerous::*;
     use aessafe::*;
     use symmetriccipher::*;
@@ -480,7 +487,6 @@ mod test {
         }
     }
 
-
     #[test]
     fn testAesSafe128() {
         let tests = tests128();
@@ -531,11 +537,9 @@ mod bench {
         let mut tmp = [0u8, ..16];
 
         do bh.iter {
-            for _ in range(0, 64) {
-                a.encrypt_block(plain, tmp);
-            }
+            a.encrypt_block(plain, tmp);
         }
 
-        bh.bytes = (plain.len() * 64) as u64;
+        bh.bytes = (plain.len()) as u64;
     }
 }
