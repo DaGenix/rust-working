@@ -169,10 +169,11 @@ fn sbox(bs: bs8_state) -> bs8_state {
 
 // find inverse Sbox of n in GF(2^8) mod POLY
 fn isbox(bs: bs8_state) -> bs8_state {
-    let nb = bs_newbasis(bs, &S2X_new);
+    let t = bs8_xor(bs, (-1, -1, 0, 0, 0, -1, -1, 0));
+    let nb = bs_newbasis(t, &S2X_new);
     let inv = g256_inv(nb);
     let nb2 = bs_newbasis(inv, &X2A_new);
-    return bs8_xor(nb2, (-1, -1, 0, 0, 0, -1, -1, 0));
+    return nb2;
 }
 
 
@@ -185,10 +186,14 @@ fn pick(x: u32, bit: u32, shift: u32) -> u32 {
 }
 
 fn construct(a: u32, b: u32, c: u32, d: u32, bit: u32) -> u32 {
-    pick(a, bit, 0)  | pick(a, bit + 8, 1)  | pick(a, bit + 16, 2)  | pick(a, bit + 24, 3) |
-    pick(b, bit, 4)  | pick(b, bit + 8, 5)  | pick(b, bit + 16, 6)  | pick(b, bit + 24, 7) |
-    pick(c, bit, 8)  | pick(c, bit + 8, 9)  | pick(c, bit + 16, 10) | pick(c, bit + 24, 11) |
-    pick(d, bit, 12) | pick(d, bit + 8, 13) | pick(d, bit + 16, 14) | pick(d, bit + 24, 15)
+//     pick(a, bit, 0)  | pick(a, bit + 8, 1)  | pick(a, bit + 16, 2)  | pick(a, bit + 24, 3) |
+//     pick(b, bit, 4)  | pick(b, bit + 8, 5)  | pick(b, bit + 16, 6)  | pick(b, bit + 24, 7) |
+//     pick(c, bit, 8)  | pick(c, bit + 8, 9)  | pick(c, bit + 16, 10) | pick(c, bit + 24, 11) |
+//     pick(d, bit, 12) | pick(d, bit + 8, 13) | pick(d, bit + 16, 14) | pick(d, bit + 24, 15)
+    pick(a, bit, 0)       | pick(b, bit, 1)       | pick(c, bit, 2)       | pick(d, bit, 3)       |
+    pick(a, bit + 8, 4)   | pick(b, bit + 8, 5)   | pick(c, bit + 8, 6)   | pick(d, bit + 8, 7)   |
+    pick(a, bit + 16, 8)  | pick(b, bit + 16, 9)  | pick(c, bit + 16, 10) | pick(d, bit + 16, 11) |
+    pick(a, bit + 24, 12) | pick(b, bit + 24, 13) | pick(c, bit + 24, 14) | pick(d, bit + 24, 15)
 }
 
 fn bs8(a: u32, b: u32, c: u32, d: u32) -> bs8_state {
@@ -206,27 +211,38 @@ fn bs8(a: u32, b: u32, c: u32, d: u32) -> bs8_state {
 fn deconstruct(bs: bs8_state, bit: u32) -> u32 {
     let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
 
+//     pick(bs0, bit, 0) | pick(bs1, bit, 1) | pick(bs2, bit, 2) | pick(bs3, bit, 3) |
+//     pick(bs4, bit, 4) | pick(bs5, bit, 5) | pick(bs6, bit, 6) | pick(bs7, bit, 7) |
+//
+//     pick(bs0, bit + 1, 8) | pick(bs1, bit + 1, 9) | pick(bs2, bit + 1, 10) | pick(bs3, bit + 1, 11) |
+//     pick(bs4, bit + 1, 12) | pick(bs5, bit + 1, 13) | pick(bs6, bit + 1, 14) | pick(bs7, bit + 1, 15) |
+//
+//     pick(bs0, bit + 2, 16) | pick(bs1, bit + 2, 17) | pick(bs2, bit + 2, 18) | pick(bs3, bit + 2, 19) |
+//     pick(bs4, bit + 2, 20) | pick(bs5, bit + 2, 21) | pick(bs6, bit + 2, 22) | pick(bs7, bit + 2, 23) |
+//
+//     pick(bs0, bit + 3, 24) | pick(bs1, bit + 3, 25) | pick(bs2, bit + 3, 26) | pick(bs3, bit + 3, 27) |
+//     pick(bs4, bit + 3, 28) | pick(bs5, bit + 3, 29) | pick(bs6, bit + 3, 30) | pick(bs7, bit + 3, 31)
+
     pick(bs0, bit, 0) | pick(bs1, bit, 1) | pick(bs2, bit, 2) | pick(bs3, bit, 3) |
     pick(bs4, bit, 4) | pick(bs5, bit, 5) | pick(bs6, bit, 6) | pick(bs7, bit, 7) |
 
-    pick(bs0, bit + 1, 8) | pick(bs1, bit + 1, 9) | pick(bs2, bit + 1, 10) | pick(bs3, bit + 1, 11) |
-    pick(bs4, bit + 1, 12) | pick(bs5, bit + 1, 13) | pick(bs6, bit + 1, 14) | pick(bs7, bit + 1, 15) |
+    pick(bs0, bit + 4, 8)  | pick(bs1, bit + 4, 9)  | pick(bs2, bit + 4, 10) | pick(bs3, bit + 4, 11) |
+    pick(bs4, bit + 4, 12) | pick(bs5, bit + 4, 13) | pick(bs6, bit + 4, 14) | pick(bs7, bit + 4, 15) |
 
-    pick(bs0, bit + 2, 16) | pick(bs1, bit + 2, 17) | pick(bs2, bit + 2, 18) | pick(bs3, bit + 2, 19) |
-    pick(bs4, bit + 2, 20) | pick(bs5, bit + 2, 21) | pick(bs6, bit + 2, 22) | pick(bs7, bit + 2, 23) |
+    pick(bs0, bit + 8, 16) | pick(bs1, bit + 8, 17) | pick(bs2, bit + 8, 18) | pick(bs3, bit + 8, 19) |
+    pick(bs4, bit + 8, 20) | pick(bs5, bit + 8, 21) | pick(bs6, bit + 8, 22) | pick(bs7, bit + 8, 23) |
 
-    pick(bs0, bit + 3, 24) | pick(bs1, bit + 3, 25) | pick(bs2, bit + 3, 26) | pick(bs3, bit + 3, 27) |
-    pick(bs4, bit + 3, 28) | pick(bs5, bit + 3, 29) | pick(bs6, bit + 3, 30) | pick(bs7, bit + 3, 31)
+    pick(bs0, bit + 12, 24) | pick(bs1, bit + 12, 25) | pick(bs2, bit + 12, 26) | pick(bs3, bit + 12, 27) |
+    pick(bs4, bit + 12, 28) | pick(bs5, bit + 12, 29) | pick(bs6, bit + 12, 30) | pick(bs7, bit + 12, 31)
 }
 
 fn un_bs8(bs: bs8_state) -> (u32, u32, u32, u32) {
     let a0 = deconstruct(bs, 0);
-    let a1 = deconstruct(bs, 4);
-    let a2 = deconstruct(bs, 8);
-    let a3 = deconstruct(bs, 12);
+    let a1 = deconstruct(bs, 1);
+    let a2 = deconstruct(bs, 2);
+    let a3 = deconstruct(bs, 3);
     return (a0, a1, a2, a3);
 }
-
 
 fn bs4(x: u32) -> bs4_state {
     return (x & 1, (x >> 1) & 1, (x >> 2) & 1, (x >> 3) & 1);
@@ -305,6 +321,23 @@ fn shift_rows(bs: bs8_state) -> bs8_state {
     (sr(bs0), sr(bs1), sr(bs2), sr(bs3), sr(bs4), sr(bs5), sr(bs6), sr(bs7))
 }
 
+fn inv_shift_rows(bs: bs8_state) -> bs8_state {
+    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
+
+    fn sr(x: u32) -> u32 {
+        // first 4 bits represent first row - don't shift
+        (x & 0x000f) |
+        // next 4 bits represent 2nd row - right rotate 1 bit
+        ((x & 0x0080) >> 3) | ((x & 0x0070) << 1) |
+        // next 4 bits represent 3rd row - right rotate 2 bits
+        ((x & 0x0c00) >> 2) | ((x & 0x0300) << 2) |
+        // next 4 bits represent 4th row - right rotate 3 bits
+        ((x & 0xe000) >> 1) | ((x & 0x1000) << 3)
+    }
+
+    (sr(bs0), sr(bs1), sr(bs2), sr(bs3), sr(bs4), sr(bs5), sr(bs6), sr(bs7))
+}
+
 
 fn mix_columns(bs: bs8_state) -> bs8_state {
     let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
@@ -329,6 +362,44 @@ fn mix_columns(bs: bs8_state) -> bs8_state {
     (bs0out, bs1out, bs2out, bs3out, bs4out, bs5out, bs6out, bs7out)
 }
 
+fn inv_mix_columns(bs: bs8_state) -> bs8_state {
+    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
+
+    fn rl4(x: u32) -> u32 {
+        ((x >> 4) & 0x0fff) | (x << 12)
+    }
+
+    fn rl8(x: u32) -> u32 {
+        ((x >> 8) & 0x00ff) | (x << 8)
+    }
+
+    fn rl12(x: u32) -> u32 {
+        ((x >> 12) & 0x000f) | (x << 4)
+    }
+
+    let bs0out = bs5 ^ bs6 ^ bs7 ^ rl4(bs5) ^ rl4(bs7) ^ rl4(bs0) ^ rl8(bs0) ^ rl8(bs5) ^ rl8(bs6) ^
+        rl12(bs5) ^ rl12(bs0);
+    let bs1out = bs5 ^ bs0 ^ rl4(bs6) ^ rl4(bs5) ^ rl4(bs0) ^ rl4(bs7) ^ rl4(bs1) ^ rl8(bs1) ^
+        rl8(bs7) ^ rl8(bs5) ^ rl12(bs6) ^ rl12(bs5) ^ rl12(bs1);
+    let bs2out = bs6 ^ bs0 ^ bs1 ^ rl4(bs7) ^ rl4(bs6) ^ rl4(bs1) ^ rl4(bs2) ^ rl8(bs0) ^ rl8(bs2) ^
+        rl8(bs6) ^ rl12(bs7) ^ rl12(bs6) ^ rl12(bs2);
+    let bs3out = bs0 ^ bs5 ^ bs1 ^ bs6 ^ bs2 ^ rl4(bs0) ^ rl4(bs5) ^ rl4(bs2) ^ rl4(bs3) ^
+        rl8(bs0) ^ rl8(bs1) ^ rl8(bs3) ^ rl8(bs5) ^ rl8(bs6) ^ rl8(bs7) ^ rl12(bs0) ^ rl12(bs5) ^
+        rl12(bs7) ^ rl12(bs3);
+    let bs4out = bs1 ^ bs5 ^ bs2 ^ bs3 ^ rl4(bs1) ^ rl4(bs6) ^ rl4(bs5) ^ rl4(bs3) ^ rl4(bs7) ^
+        rl4(bs4) ^ rl8(bs1) ^ rl8(bs2) ^ rl8(bs4) ^ rl8(bs5) ^ rl8(bs7) ^ rl12(bs1) ^ rl12(bs5) ^
+        rl12(bs6) ^ rl12(bs4);
+    let bs5out = bs2 ^ bs6 ^ bs3 ^ bs4 ^ rl4(bs2) ^ rl4(bs7) ^ rl4(bs6) ^ rl4(bs4) ^ rl4(bs5) ^
+        rl8(bs2) ^ rl8(bs3) ^ rl8(bs5) ^ rl8(bs6) ^ rl12(bs2) ^ rl12(bs6) ^ rl12(bs7) ^ rl12(bs5);
+    let bs6out =  bs3 ^ bs7 ^ bs4 ^ bs5 ^ rl4(bs3) ^ rl4(bs7) ^ rl4(bs5) ^ rl4(bs6) ^ rl8(bs3) ^
+        rl8(bs4) ^ rl8(bs6) ^ rl8(bs7) ^ rl12(bs3) ^ rl12(bs7) ^ rl12(bs6);
+    let bs7out = bs4 ^ bs5 ^ bs6 ^ rl4(bs4) ^ rl4(bs6) ^ rl4(bs7) ^ rl8(bs4) ^ rl8(bs5) ^ rl8(bs7) ^
+        rl12(bs4) ^ rl12(bs7);
+
+    (bs0out, bs1out, bs2out, bs3out, bs4out, bs5out, bs6out, bs7out)
+}
+
+
 fn shift(r: u32, shift: u32) -> u32 {
     return (r >> shift) | (r << (32 - shift));
 }
@@ -347,14 +418,23 @@ fn mcol(x: u32) -> u32 {
     return f2 ^ shift(x ^ f2, 8) ^ shift(x, 16) ^ shift(x, 24);
 }
 
+// The inverse mix columns step
+fn inv_mcol(x: u32) -> u32 {
+    let f2 = ffmulx(x);
+    let f4 = ffmulx(f2);
+    let f8 = ffmulx(f4);
+    let f9 = x ^ f8;
+
+    return f2 ^ f4 ^ f8 ^ shift(f2 ^ f9, 8) ^ shift(f4 ^ f9, 16) ^ shift(f9, 24);
+}
 
 fn main() {
-    let a: u32 = 0xdb;
-    let b: u32 = 0x13;
-    let c: u32 = 0x53;
-    let d: u32 = 0x45;
+    let a: u32 = 0xaabbccdd;
+    let b: u32 = 0x12345678;
+    let c: u32 = 0xaabbccdd;
+    let d: u32 = 0xaabbccdd;
 
-    let (ap, bp, cp, dp) = un_bs8(mix_columns(bs8(a, b, c, d)));
+    let (ap, bp, cp, dp) = un_bs8(inv_shift_rows(shift_rows(bs8(a, b, c, d))));
 
     printfln!("a: %x", ap as uint);
     printfln!("b: %x", bp as uint);
@@ -372,8 +452,17 @@ fn main() {
 //     printfln!("c: %x", cp2 as uint);
 //     printfln!("d: %x", dp2 as uint);
 
-    printfln!("r: %x", mcol(0x45_53_13_db) as uint);
+    printfln!("a2: %x", inv_mcol(a) as uint);
+    printfln!("b2: %x", inv_mcol(b) as uint);
+    printfln!("c2: %x", inv_mcol(c) as uint);
+    printfln!("d2: %x", inv_mcol(d) as uint);
 
+
+//     for i in range(0, 256) {
+//         let bs = bs8(i as u32, 0, 0, 0);
+//         let (a, _, _, _) = un_bs8(isbox(bs));
+//         printfln!("%x => %x", i as uint, (a & 0xff) as uint);
+//     }
 
 //     for i in range(0, 8) {
 //         print("[");
