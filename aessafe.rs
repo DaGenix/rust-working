@@ -8,6 +8,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::num::Zero;
 use std::uint;
 
 use cryptoutil::*;
@@ -21,7 +22,7 @@ macro_rules! define_aes_struct(
     ) => (
         struct $name {
             round_keys: [[u32, ..4], ..$rounds + 1],
-            sk: [bs8_state, ..$rounds + 1]
+            sk: [Bs8State<u32>, ..$rounds + 1]
         }
     )
 )
@@ -37,7 +38,7 @@ macro_rules! define_aes_impl(
             pub fn new(key: &[u8]) -> $name {
                 let mut a =  $name {
                     round_keys: [[0u32, ..4], ..$rounds + 1],
-                    sk: [(0,0,0,0,0,0,0,0), ..$rounds + 1]
+                    sk: [Bs8State(0,0,0,0,0,0,0,0), ..$rounds + 1]
                 };
                 setup_round_keys(key, $mode, a.round_keys, a.sk);
                 return a;
@@ -106,12 +107,6 @@ fn ffmulx(x: u32) -> u32 {
     return ((x & m2) << 1) ^ (((x & m1) >> 7) * m3);
 }
 
-// Mix columns step
-fn mcol(x: u32) -> u32 {
-    let f2 = ffmulx(x);
-    return f2 ^ shift(x ^ f2, 8) ^ shift(x, 16) ^ shift(x, 24);
-}
-
 // The inverse mix columns step
 fn inv_mcol(x: u32) -> u32 {
     let f2 = ffmulx(x);
@@ -131,7 +126,9 @@ enum KeyType {
     Decryption
 }
 
-fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]], sk: &mut [bs8_state]) {
+static RCON: [u32, ..10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
+
+fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]], sk: &mut [Bs8State<u32>]) {
     let (key_words, rounds) = match key.len() {
         16 => (4, 10u),
         24 => (6, 12u),
@@ -176,386 +173,225 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
     }
 
     for i in range(0, rounds + 1) {
-        sk[i] = bs8(round_keys[i][0], round_keys[i][1], round_keys[i][2], round_keys[i][3])
+        sk[i] = bit_splice_4x4_with_u32(
+            round_keys[i][0],
+            round_keys[i][1],
+            round_keys[i][2],
+            round_keys[i][3])
     }
 }
 
-fn shift_rows(bs: bs8_state) -> bs8_state {
-    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
+trait AesRowTypeOps: BitXor<Self, Self> + BitAnd<Self, Self> + Clone + Zero {
+    fn a2x() -> &'static [[Self, ..8], ..8];
+    fn x2s() -> &'static [[Self, ..8], ..8];
+    fn s2x() -> &'static [[Self, ..8], ..8];
+    fn x2a() -> &'static [[Self, ..8], ..8];
+    fn x63() -> Bs8State<Self>;
 
-    fn sr(x: u32) -> u32 {
+    fn shift_row(&self) -> Self;
+    fn inv_shift_row(&self) -> Self;
+    fn ror1(&self) -> Self;
+    fn ror2(&self) -> Self;
+    fn ror3(&self) -> Self;
+}
+
+impl AesRowTypeOps for u32 {
+    fn a2x() -> &'static [[u32, ..8], ..8] { &A2X_new }
+    fn x2s() -> &'static [[u32, ..8], ..8] { &X2S_new }
+    fn s2x() -> &'static [[u32, ..8], ..8] { &S2X_new }
+    fn x2a() -> &'static [[u32, ..8], ..8] { &X2A_new }
+    fn x63() -> Bs8State<u32> { Bs8State(-1, -1, 0, 0, 0, -1, -1, 0) }
+
+    fn shift_row(&self) -> u32 {
         // first 4 bits represent first row - don't shift
-        (x & 0x000f) |
+        (*self & 0x000f) |
         // next 4 bits represent 2nd row - left rotate 1 bit
-        ((x & 0x00e0) >> 1) | ((x & 0x0010) << 3) |
+        ((*self & 0x00e0) >> 1) | ((*self & 0x0010) << 3) |
         // next 4 bits represent 3rd row - left rotate 2 bits
-        ((x & 0x0c00) >> 2) | ((x & 0x0300) << 2) |
+        ((*self & 0x0c00) >> 2) | ((*self & 0x0300) << 2) |
         // next 4 bits represent 4th row - left rotate 3 bits
-        ((x & 0x8000) >> 3) | ((x & 0x7000) << 1)
+        ((*self & 0x8000) >> 3) | ((*self & 0x7000) << 1)
     }
-
-    (sr(bs0), sr(bs1), sr(bs2), sr(bs3), sr(bs4), sr(bs5), sr(bs6), sr(bs7))
-}
-
-fn inv_shift_rows(bs: bs8_state) -> bs8_state {
-    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
-
-    fn sr(x: u32) -> u32 {
+    fn inv_shift_row(&self) -> u32 {
         // first 4 bits represent first row - don't shift
-        (x & 0x000f) |
+        (*self & 0x000f) |
         // next 4 bits represent 2nd row - right rotate 1 bit
-        ((x & 0x0080) >> 3) | ((x & 0x0070) << 1) |
+        ((*self & 0x0080) >> 3) | ((*self & 0x0070) << 1) |
         // next 4 bits represent 3rd row - right rotate 2 bits
-        ((x & 0x0c00) >> 2) | ((x & 0x0300) << 2) |
+        ((*self & 0x0c00) >> 2) | ((*self & 0x0300) << 2) |
         // next 4 bits represent 4th row - right rotate 3 bits
-        ((x & 0xe000) >> 1) | ((x & 0x1000) << 3)
+        ((*self & 0xe000) >> 1) | ((*self & 0x1000) << 3)
     }
-
-    (sr(bs0), sr(bs1), sr(bs2), sr(bs3), sr(bs4), sr(bs5), sr(bs6), sr(bs7))
+    fn ror1(&self) -> u32 {
+        ((*self >> 4) & 0x0fff) | (*self << 12)
+    }
+    fn ror2(&self) -> u32 {
+        ((*self >> 8) & 0x00ff) | (*self << 8)
+    }
+    fn ror3(&self) -> u32 {
+        ((*self >> 12) & 0x000f) | (*self << 4)
+    }
 }
 
-fn mix_columns(bs: bs8_state) -> bs8_state {
-    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
-
-    fn rl4(x: u32) -> u32 {
-        ((x >> 4) & 0x0fff) | (x << 12)
-    }
-
-    fn rl8(x: u32) -> u32 {
-        ((x >> 8) & 0x00ff) | (x << 8)
-    }
-
-    let bs0out = (bs7 ^ rl4(bs7)) ^ rl4(bs0) ^ rl8(bs0 ^ rl4(bs0));
-    let bs1out = (bs0 ^ rl4(bs0)) ^ (bs7 ^ rl4(bs7)) ^ rl4(bs1) ^ rl8(bs1 ^ rl4(bs1));
-    let bs2out = (bs1 ^ rl4(bs1)) ^ rl4(bs2) ^ rl8(bs2 ^ rl4(bs2));
-    let bs3out = (bs2 ^ rl4(bs2)) ^ (bs7 ^ rl4(bs7)) ^ rl4(bs3) ^ rl8(bs3 ^ rl4(bs3));
-    let bs4out = (bs3 ^ rl4(bs3)) ^ (bs7 ^ rl4(bs7)) ^ rl4(bs4) ^ rl8(bs4 ^ rl4(bs4));
-    let bs5out = (bs4 ^ rl4(bs4)) ^ rl4(bs5) ^ rl8(bs5 ^ rl4(bs5));
-    let bs6out = (bs5 ^ rl4(bs5)) ^ rl4(bs6) ^ rl8(bs6 ^ rl4(bs6));
-    let bs7out = (bs6 ^ rl4(bs6)) ^ rl4(bs7) ^ rl8(bs7 ^ rl4(bs7));
-
-    (bs0out, bs1out, bs2out, bs3out, bs4out, bs5out, bs6out, bs7out)
+trait AesOps {
+    fn sub_bytes(&self) -> Self;
+    fn inv_sub_bytes(&self) -> Self;
+    fn shift_rows(&self) -> Self;
+    fn inv_shift_rows(&self) -> Self;
+    fn mix_columns(&self) -> Self;
+    fn inv_mix_columns(&self) -> Self;
+    fn add_round_key(&self, rk: &Self) -> Self;
 }
 
-fn inv_mix_columns(bs: bs8_state) -> bs8_state {
-    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
-
-    fn rl4(x: u32) -> u32 {
-        ((x >> 4) & 0x0fff) | (x << 12)
+impl <T: AesRowTypeOps> AesOps for Bs8State<T> {
+    // find Sbox of n in GF(2^8) mod POLY
+    fn sub_bytes(&self) -> Bs8State<T> {
+        let nb = self.change_basis(AesRowTypeOps::a2x::<T>());
+        let inv = nb.inv();
+        let nb2 = inv.change_basis(AesRowTypeOps::x2s::<T>());
+        let x63 = AesRowTypeOps::x63::<T>();
+        return nb2.xor(&x63);
     }
-
-    fn rl8(x: u32) -> u32 {
-        ((x >> 8) & 0x00ff) | (x << 8)
+    // find inverse Sbox of n in GF(2^8) mod POLY
+    fn inv_sub_bytes(&self) -> Bs8State<T> {
+        let x63 = AesRowTypeOps::x63::<T>();
+        let t = self.xor(&x63);
+        let nb = t.change_basis(AesRowTypeOps::s2x::<T>());
+        let inv = nb.inv();
+        let nb2 = inv.change_basis(AesRowTypeOps::x2a::<T>());
+        return nb2;
     }
-
-    fn rl12(x: u32) -> u32 {
-        ((x >> 12) & 0x000f) | (x << 4)
+    fn shift_rows(&self) -> Bs8State<T> {
+        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
+        return Bs8State(
+            x0.shift_row(),
+            x1.shift_row(),
+            x2.shift_row(),
+            x3.shift_row(),
+            x4.shift_row(),
+            x5.shift_row(),
+            x6.shift_row(),
+            x7.shift_row());
     }
+    fn inv_shift_rows(&self) -> Bs8State<T> {
+        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
+        return Bs8State(
+            x0.inv_shift_row(),
+            x1.inv_shift_row(),
+            x2.inv_shift_row(),
+            x3.inv_shift_row(),
+            x4.inv_shift_row(),
+            x5.inv_shift_row(),
+            x6.inv_shift_row(),
+            x7.inv_shift_row());
+    }
+    fn mix_columns(&self) -> Bs8State<T> {
+        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
 
-    let bs0out = bs5 ^ bs6 ^ bs7 ^ rl4(bs5) ^ rl4(bs7) ^ rl4(bs0) ^ rl8(bs0) ^ rl8(bs5) ^ rl8(bs6) ^
-        rl12(bs5) ^ rl12(bs0);
-    let bs1out = bs5 ^ bs0 ^ rl4(bs6) ^ rl4(bs5) ^ rl4(bs0) ^ rl4(bs7) ^ rl4(bs1) ^ rl8(bs1) ^
-        rl8(bs7) ^ rl8(bs5) ^ rl12(bs6) ^ rl12(bs5) ^ rl12(bs1);
-    let bs2out = bs6 ^ bs0 ^ bs1 ^ rl4(bs7) ^ rl4(bs6) ^ rl4(bs1) ^ rl4(bs2) ^ rl8(bs0) ^ rl8(bs2) ^
-        rl8(bs6) ^ rl12(bs7) ^ rl12(bs6) ^ rl12(bs2);
-    let bs3out = bs0 ^ bs5 ^ bs1 ^ bs6 ^ bs2 ^ rl4(bs0) ^ rl4(bs5) ^ rl4(bs2) ^ rl4(bs3) ^
-        rl8(bs0) ^ rl8(bs1) ^ rl8(bs3) ^ rl8(bs5) ^ rl8(bs6) ^ rl8(bs7) ^ rl12(bs0) ^ rl12(bs5) ^
-        rl12(bs7) ^ rl12(bs3);
-    let bs4out = bs1 ^ bs5 ^ bs2 ^ bs3 ^ rl4(bs1) ^ rl4(bs6) ^ rl4(bs5) ^ rl4(bs3) ^ rl4(bs7) ^
-        rl4(bs4) ^ rl8(bs1) ^ rl8(bs2) ^ rl8(bs4) ^ rl8(bs5) ^ rl8(bs7) ^ rl12(bs1) ^ rl12(bs5) ^
-        rl12(bs6) ^ rl12(bs4);
-    let bs5out = bs2 ^ bs6 ^ bs3 ^ bs4 ^ rl4(bs2) ^ rl4(bs7) ^ rl4(bs6) ^ rl4(bs4) ^ rl4(bs5) ^
-        rl8(bs2) ^ rl8(bs3) ^ rl8(bs5) ^ rl8(bs6) ^ rl12(bs2) ^ rl12(bs6) ^ rl12(bs7) ^ rl12(bs5);
-    let bs6out =  bs3 ^ bs7 ^ bs4 ^ bs5 ^ rl4(bs3) ^ rl4(bs7) ^ rl4(bs5) ^ rl4(bs6) ^ rl8(bs3) ^
-        rl8(bs4) ^ rl8(bs6) ^ rl8(bs7) ^ rl12(bs3) ^ rl12(bs7) ^ rl12(bs6);
-    let bs7out = bs4 ^ bs5 ^ bs6 ^ rl4(bs4) ^ rl4(bs6) ^ rl4(bs7) ^ rl8(bs4) ^ rl8(bs5) ^ rl8(bs7) ^
-        rl12(bs4) ^ rl12(bs7);
+        let x0out = x7 ^ x7.ror1() ^ x0.ror1() ^ (x0 ^ x0.ror1()).ror2();
+        let x1out = x0 ^ x0.ror1() ^ *x7 ^ x7.ror1() ^ x1.ror1() ^ (x1 ^ x1.ror1()).ror2();
+        let x2out = x1 ^ x1.ror1() ^ x2.ror1() ^ (x2 ^ x2.ror1()).ror2();
+        let x3out = x2 ^ x2.ror1() ^ *x7 ^ x7.ror1() ^ x3.ror1() ^ (x3 ^ x3.ror1()).ror2();
+        let x4out = x3 ^ x3.ror1() ^ *x7 ^ x7.ror1() ^ x4.ror1() ^ (x4 ^ x4.ror1()).ror2();
+        let x5out = x4 ^ x4.ror1() ^ x5.ror1() ^ (x5 ^ x5.ror1()).ror2();
+        let x6out = x5 ^ x5.ror1() ^ x6.ror1() ^ (x6 ^ x6.ror1()).ror2();
+        let x7out = x6 ^ x6.ror1() ^ x7.ror1() ^ (x7 ^ x7.ror1()).ror2();
 
-    (bs0out, bs1out, bs2out, bs3out, bs4out, bs5out, bs6out, bs7out)
+        return Bs8State(x0out, x1out, x2out, x3out, x4out, x5out, x6out, x7out);
+    }
+    fn inv_mix_columns(&self) -> Bs8State<T> {
+        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
+
+        let x0out = *x5 ^ *x6 ^ *x7 ^
+            x5.ror1() ^ x7.ror1() ^ x0.ror1() ^
+            x0.ror2() ^ x5.ror2() ^ x6.ror2() ^
+            x5.ror3() ^ x0.ror3();
+        let x1out = *x5 ^ *x0 ^
+            x6.ror1() ^ x5.ror1() ^ x0.ror1() ^ x7.ror1() ^ x1.ror1() ^
+            x1.ror2() ^ x7.ror2() ^ x5.ror2() ^
+            x6.ror3() ^ x5.ror3() ^ x1.ror3();
+        let x2out = *x6 ^ *x0 ^ *x1 ^
+            x7.ror1() ^ x6.ror1() ^ x1.ror1() ^ x2.ror1() ^
+            x0.ror2() ^ x2.ror2() ^ x6.ror2() ^
+            x7.ror3() ^ x6.ror3() ^ x2.ror3();
+        let x3out = *x0 ^ *x5 ^ *x1 ^ *x6 ^ *x2 ^
+            x0.ror1() ^ x5.ror1() ^ x2.ror1() ^ x3.ror1() ^
+            x0.ror2() ^ x1.ror2() ^ x3.ror2() ^ x5.ror2() ^ x6.ror2() ^ x7.ror2() ^
+            x0.ror3() ^ x5.ror3() ^ x7.ror3() ^ x3.ror3();
+        let x4out = *x1 ^ *x5 ^ *x2 ^ *x3 ^
+            x1.ror1() ^ x6.ror1() ^ x5.ror1() ^ x3.ror1() ^ x7.ror1() ^ x4.ror1() ^
+            x1.ror2() ^ x2.ror2() ^ x4.ror2() ^ x5.ror2() ^ x7.ror2() ^
+            x1.ror3() ^ x5.ror3() ^ x6.ror3() ^ x4.ror3();
+        let x5out = *x2 ^ *x6 ^ *x3 ^ *x4 ^
+            x2.ror1() ^ x7.ror1() ^ x6.ror1() ^ x4.ror1() ^ x5.ror1() ^
+            x2.ror2() ^ x3.ror2() ^ x5.ror2() ^ x6.ror2() ^
+            x2.ror3() ^ x6.ror3() ^ x7.ror3() ^ x5.ror3();
+        let x6out =  *x3 ^ *x7 ^ *x4 ^ *x5 ^
+            x3.ror1() ^ x7.ror1() ^ x5.ror1() ^ x6.ror1() ^
+            x3.ror2() ^ x4.ror2() ^ x6.ror2() ^ x7.ror2() ^
+            x3.ror3() ^ x7.ror3() ^ x6.ror3();
+        let x7out = *x4 ^ *x5 ^ *x6 ^
+            x4.ror1() ^ x6.ror1() ^ x7.ror1() ^
+            x4.ror2() ^ x5.ror2() ^ x7.ror2() ^
+            x4.ror3() ^ x7.ror3();
+
+        Bs8State(x0out, x1out, x2out, x3out, x4out, x5out, x6out, x7out)
+    }
+    fn add_round_key(&self, rk: &Bs8State<T>) -> Bs8State<T> {
+        return self.xor(rk);
+    }
 }
 
-fn encrypt_block(rounds: uint, input: &[u8], sk: &[bs8_state], output: &mut [u8]) {
-    let mut c = [0u32, ..4];
-    read_u32v_le(c, input);
-
-    let mut bs = bs8(c[0], c[1], c[2], c[3]);
-
+fn encrypt_core<S: AesOps>(state: &S, sk: &[S]) -> S {
     // Round 0 - add round key
-    bs = bs8_xor(bs, sk[0]);
+    let mut tmp = state.add_round_key(&sk[0]);
 
     // Remaining rounds (except last round)
-    for i in range(1, rounds) {
-        bs = sbox_bs(bs);
-        bs = shift_rows(bs);
-        bs = mix_columns(bs);
-        bs = bs8_xor(bs, sk[i]);
+    for i in range(1, sk.len() - 1) {
+        tmp = tmp.sub_bytes();
+        tmp = tmp.shift_rows();
+        tmp = tmp.mix_columns();
+        tmp = tmp.add_round_key(&sk[i]);
     }
 
     // Last round
-    bs = sbox_bs(bs);
-    bs = shift_rows(bs);
-    bs = bs8_xor(bs, sk[rounds]);
+    tmp = tmp.sub_bytes();
+    tmp = tmp.shift_rows();
+    tmp = tmp.add_round_key(&sk[sk.len() - 1]);
 
-    let (c0, c1, c2, c3) = un_bs8(bs);
-
-    write_u32_le(output.mut_slice(0, 4), c0);
-    write_u32_le(output.mut_slice(4, 8), c1);
-    write_u32_le(output.mut_slice(8, 12), c2);
-    write_u32_le(output.mut_slice(12, 16), c3);
+    return tmp;
 }
 
-fn decrypt_block(rounds: uint, input: &[u8], sk: &[bs8_state], output: &mut [u8]) {
-    let mut c = [0u32, ..4];
-    read_u32v_le(c, input);
+fn encrypt_block(rounds: uint, input: &[u8], sk: &[Bs8State<u32>], output: &mut [u8]) {
+    let mut bs = bit_splice_1x16_with_u32(input);
+    bs = encrypt_core(&bs, sk);
+    un_bit_splice_1x16_with_u32(&bs, output);
+}
 
-    let mut bs = bs8(c[0], c[1], c[2], c[3]);
-
+fn decrypt_core<S: AesOps>(state: &S, sk: &[S]) -> S {
     // Round 0 - add round key
-    bs = bs8_xor(bs, sk[rounds]);
+    let mut tmp = state.add_round_key(&sk[sk.len() - 1]);
 
     // Remaining rounds (except last round)
-    for i in range(1, rounds) {
-        bs = isbox_bs(bs);
-        bs = inv_shift_rows(bs);
-        bs = inv_mix_columns(bs);
-        bs = bs8_xor(bs, sk[rounds - i]);
+    for i in range(1, sk.len() - 1) {
+        tmp = tmp.inv_sub_bytes();
+        tmp = tmp.inv_shift_rows();
+        tmp = tmp.inv_mix_columns();
+        tmp = tmp.add_round_key(&sk[sk.len() - 1 - i]);
     }
 
     // Last round
-    bs = isbox_bs(bs);
-    bs = inv_shift_rows(bs);
-    bs = bs8_xor(bs, sk[0]);
+    tmp = tmp.inv_sub_bytes();
+    tmp = tmp.inv_shift_rows();
+    tmp = tmp.add_round_key(&sk[0]);
 
-    let (c0, c1, c2, c3) = un_bs8(bs);
-
-    write_u32_le(output.mut_slice(0, 4), c0);
-    write_u32_le(output.mut_slice(4, 8), c1);
-    write_u32_le(output.mut_slice(8, 12), c2);
-    write_u32_le(output.mut_slice(12, 16), c3);
+    return tmp;
 }
 
-
-#[cfg(slow)]
-fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8]) {
-    fn sr(a: u32, b: u32, c: u32, d: u32) -> (u32, u32, u32, u32) {
-        let w = (a & 0xff) | (b & 0xff00) | (c & 0xff0000) | (d & 0xff000000);
-        let x = (b & 0xff) | (c & 0xff00) | (d & 0xff0000) | (a & 0xff000000);
-        let y = (c & 0xff) | (d & 0xff00) | (a & 0xff0000) | (b & 0xff000000);
-        let z = (d & 0xff) | (a & 0xff00) | (b & 0xff0000) | (c & 0xff000000);
-        (w, x, y, z)
-    }
-
-    fn d(c0: u32, c1: u32, c2: u32, c3: u32) {
-        printfln!("a: %x", c0 as uint);
-        printfln!("b: %x", c1 as uint);
-        printfln!("c: %x", c2 as uint);
-        printfln!("d: %x", c3 as uint);
-        println("");
-    }
-
-    let mut c = [0u32, ..4];
-    read_u32v_le(c, input);
-
-    let mut c0 = c[0];
-    let mut c1 = c[1];
-    let mut c2 = c[2];
-    let mut c3 = c[3];
-
-    c0 ^= rk[0][0];
-    c1 ^= rk[0][1];
-    c2 ^= rk[0][2];
-    c3 ^= rk[0][3];
-
-    for i in range(1, rounds) {
-        // sub bytes
-        let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(c0, c1, c2, c3)));
-        c0 = t0; c1 = t1; c2 = t2; c3 = t3;
-
-        // shift rows
-        let (t0, t1, t2, t3) = sr(c0, c1, c2, c3);
-        c0 = t0; c1 = t1; c2 = t2; c3 = t3;
-
-        // mix columns
-        c0 = mcol(c0);
-        c1 = mcol(c1);
-        c2 = mcol(c2);
-        c3 = mcol(c3);
-
-        // add round key
-        c0 ^= rk[i][0];
-        c1 ^= rk[i][1];
-        c2 ^= rk[i][2];
-        c3 ^= rk[i][3];
-    }
-
-    // sub bytes
-    let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(c0, c1, c2, c3)));
-    c0 = t0; c1 = t1; c2 = t2; c3 = t3;
-
-    // shift rows
-    let (t0, t1, t2, t3) = sr(c0, c1, c2, c3);
-    c0 = t0; c1 = t1; c2 = t2; c3 = t3;
-
-    // add round key
-    c0 ^= rk[rounds][0];
-    c1 ^= rk[rounds][1];
-    c2 ^= rk[rounds][2];
-    c3 ^= rk[rounds][3];
-
-    write_u32_le(output.mut_slice(0, 4), c0);
-    write_u32_le(output.mut_slice(4, 8), c1);
-    write_u32_le(output.mut_slice(8, 12), c2);
-    write_u32_le(output.mut_slice(12, 16), c3);
-}
-
-#[cfg(fast)]
-fn encrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8]) {
-    fn op(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
-        printfln!("x: %x", ((v & 0xff) ^ (x & 0xff00) ^ (y & 0xff0000) ^ (z & 0xff000000)) as uint);
-        return mcol((v & 0xff) ^ (x & 0xff00) ^ (y & 0xff0000) ^ (z & 0xff000000)) ^ k;
-    }
-
-    fn op_end(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
-        return (v & 0xff) ^ (x & 0xff00) ^ (y & 0xff0000) ^ (z & 0xff000000) ^ k;
-    }
-
-    fn d(c0: u32, c1: u32, c2: u32, c3: u32) {
-        printfln!("a: %x", c0 as uint);
-        printfln!("b: %x", c1 as uint);
-        printfln!("c: %x", c2 as uint);
-        printfln!("d: %x", c3 as uint);
-        println("");
-    }
-
-    let mut c = [0u32, ..4];
-    read_u32v_le(c, input);
-
-    let mut c0 = c[0];
-    let mut c1 = c[1];
-    let mut c2 = c[2];
-    let mut c3 = c[3];
-
-    c0 ^= rk[0][0];
-    c1 ^= rk[0][1];
-    c2 ^= rk[0][2];
-    c3 ^= rk[0][3];
-
-    let mut r = 1;
-    while (r < rounds - 1) {
-        let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(c0, c1, c2, c3)));
-        c0 = t0; c1 = t1; c2 = t2; c3 = t3;
-        let mut r0 = op(c0, c1, c2, c3, rk[r][0]);
-        let mut r1 = op(c1, c2, c3, c0, rk[r][1]);
-        let mut r2 = op(c2, c3, c0, c1, rk[r][2]);
-        let mut r3 = op(c3, c0, c1, c2, rk[r][3]);
-        r += 1;
-
-        println("");
-//        d(r0, r1, r2, r3);
-
-        let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(r0, r1, r2, r3)));
-        r0 = t0; r1 = t1; r2 = t2; r3 = t3;
-        c0 = op(r0, r1, r2, r3, rk[r][0]);
-        c1 = op(r1, r2, r3, r0, rk[r][1]);
-        c2 = op(r2, r3, r0, r1, rk[r][2]);
-        c3 = op(r3, r0, r1, r2, rk[r][3]);
-        r += 1;
-
-        println("");
-//        d(c0, c1, c2, c3);
-    }
-
-    let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(c0, c1, c2, c3)));
-    c0 = t0; c1 = t1; c2 = t2; c3 = t3;
-    let mut r0 = op(c0, c1, c2, c3, rk[r][0]);
-    let mut r1 = op(c1, c2, c3, c0, rk[r][1]);
-    let mut r2 = op(c2, c3, c0, c1, rk[r][2]);
-    let mut r3 = op(c3, c0, c1, c2, rk[r][3]);
-    r += 1;
-
-    let (t0, t1, t2, t3) = un_bs8(sbox_bs(bs8(r0, r1, r2, r3)));
-    r0 = t0; r1 = t1; r2 = t2; r3 = t3;
-    c0 = op_end(r0, r1, r2, r3, rk[r][0]);
-    c1 = op_end(r1, r2, r3, r0, rk[r][1]);
-    c2 = op_end(r2, r3, r0, r1, rk[r][2]);
-    c3 = op_end(r3, r0, r1, r2, rk[r][3]);
-
-    write_u32_le(output.mut_slice(0, 4), c0);
-    write_u32_le(output.mut_slice(4, 8), c1);
-    write_u32_le(output.mut_slice(8, 12), c2);
-    write_u32_le(output.mut_slice(12, 16), c3);
-}
-
-
-
-#[cfg(old)]
-fn decrypt_block(rounds: uint, input: &[u8], rk: &[[u32, ..4]], output: &mut [u8]) {
-    fn op(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
-        return inv_mcol((v) ^ ((x >> 8) << 8) ^ ((y >> 16) << 16) ^
-            ((z >> 24) << 24)) ^ k;
-    }
-
-    fn op_end(v: u32, x: u32, y: u32, z: u32, k: u32) -> u32 {
-        return (v) ^ ((x >> 8) << 8) ^ ((y >> 16) << 16) ^ ((z >> 24) << 24) ^
-            k;
-    }
-
-    let mut r0: u32;
-    let mut r1: u32;
-    let mut r2: u32;
-    let mut r3: u32;
-
-    let mut c = [0u32, ..4];
-    read_u32v_le(c, input);
-
-    let mut c0 = c[0];
-    let mut c1 = c[1];
-    let mut c2 = c[2];
-    let mut c3 = c[3];
-
-    c0 ^= rk[rounds][0];
-    c1 ^= rk[rounds][1];
-    c2 ^= rk[rounds][2];
-    c3 ^= rk[rounds][3];
-
-    let mut r = rounds - 1;
-    while (r > 1) {
-        let (t0, t1, t2, t3) = un_bs8(isbox_bs(bs8(c0, c1, c2, c3)));
-        c0 = t0; c1 = t1; c2 = t2; c3 = t3;
-        r0 = op(c0, c3, c2, c1, rk[r][0]);
-        r1 = op(c1, c0, c3, c2, rk[r][1]);
-        r2 = op(c2, c1, c0, c3, rk[r][2]);
-        r3 = op(c3, c2, c1, c0, rk[r][3]);
-        r -= 1;
-
-        let (t0, t1, t2, t3) = un_bs8(isbox_bs(bs8(r0, r1, r2, r3)));
-        r0 = t0; r1 = t1; r2 = t2; r3 = t3;
-        c0 = op(r0, r3, r2, r1, rk[r][0]);
-        c1 = op(r1, r0, r3, r2, rk[r][1]);
-        c2 = op(r2, r1, r0, r3, rk[r][2]);
-        c3 = op(r3, r2, r1, r0, rk[r][3]);
-        r -= 1;
-    }
-
-        let (t0, t1, t2, t3) = un_bs8(isbox_bs(bs8(c0, c1, c2, c3)));
-        c0 = t0; c1 = t1; c2 = t2; c3 = t3;
-    r0 = op(c0, c3, c2, c1, rk[r][0]);
-    r1 = op(c1, c0, c3, c2, rk[r][1]);
-    r2 = op(c2, c1, c0, c3, rk[r][2]);
-    r3 = op(c3, c2, c1, c0, rk[r][3]);
-    r -= 1;
-
-        let (t0, t1, t2, t3) = un_bs8(isbox_bs(bs8(r0, r1, r2, r3)));
-        r0 = t0; r1 = t1; r2 = t2; r3 = t3;
-    c0 = op_end(r0, r3, r2, r1, rk[r][0]);
-    c1 = op_end(r1, r0, r3, r2, rk[r][1]);
-    c2 = op_end(r2, r1, r0, r3, rk[r][2]);
-    c3 = op_end(r3, r2, r1, r0, rk[r][3]);
-
-    write_u32_le(output.mut_slice(0, 4), c0);
-    write_u32_le(output.mut_slice(4, 8), c1);
-    write_u32_le(output.mut_slice(8, 12), c2);
-    write_u32_le(output.mut_slice(12, 16), c3);
+fn decrypt_block(rounds: uint, input: &[u8], sk: &[Bs8State<u32>], output: &mut [u8]) {
+    let mut bs = bit_splice_1x16_with_u32(input);
+    bs = decrypt_core(&bs, sk);
+    un_bit_splice_1x16_with_u32(&bs, output);
 }
 
 
@@ -593,255 +429,104 @@ fn s(idx: u32) -> u32 {
 //    return Sbox(idx as u8) as u32;
 }
 
-fn s_inv_box(x: u8) -> u8 {
-    return
-    bsbit(0x3401152364e0b71b, 0x7f7905d6a74448f0, 0x9c871717c7e3cf3f, 0x9563022b94d8ff93, x) |
-    bsbit(0xa472c324eeb6915c, 0xb65292cd33b94ea4, 0x5fdb0017602e607c, 0x3dbc565f793a930e, x) << 1 |
-    bsbit(0x2be37f606dec9249, 0x54a4b31e7f58594f, 0x4728376e5d29c604, 0xa659e338252317ad, x) << 2 |
-    bsbit(0x2c2d1e54c17bc664, 0x8d006daf619d9fb1, 0x87bfc5ce0e53816a, 0x71722449637a3fa9, x) << 3 |
-    bsbit(0xee82b6b8b94ba50d, 0x1ca1f56acf9d2bf6, 0x51968ad5b3beac14, 0xf0c45e001093f269, x) << 4 |
-    bsbit(0x6a678d3096393ac6, 0xed4e94821e3c9ae0, 0x5c98fc7e7fe006ef, 0x50cd80015b87c97f, x) << 5 |
-    bsbit(0x89b3be2e56ad0823, 0x9711aa7079675e44, 0x39f6dca0638f8bb6, 0x931aae01f38b319b, x) << 6 |
-    bsbit(0x356065fe3e1e61f6, 0x75bbd5c37152d174, 0x1b55a5f2bea797a0, 0xbd04350866430b40, x) << 7;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+struct Bs8State<T>(T, T, T, T, T, T, T, T);
+
+impl <T: Clone> Bs8State<T> {
+    fn split(&self) -> (Bs4State<T>, Bs4State<T>) {
+        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
+        return (Bs4State(x0.clone(), x1.clone(), x2.clone(), x3.clone()),
+            Bs4State(x4.clone(), x5.clone(), x6.clone(), x7.clone()));
+    }
 }
 
-/// Get the S_INV value using a fixed number of instructions
-/// Only the bottom byte is used - basically the "idx" argument is a u8, but this lets us avoid
-/// some casts
-fn s_inv(idx: u32) -> u32 {
-    return s_inv_box(idx as u8) as u32;
-}
-
-static RCON: [u32, ..10] = [
-    0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
-    0x1b, 0x36
-];
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// to convert between polynomial (A^7...1) basis A & normal basis X
-// or to basis S which incorporates bit matrix of Sbox
-static A2X_new: [[u32, ..8], ..8] = [
-    [0, 0, 0, -1, -1, 0, 0, -1],
-    [-1, -1, 0, 0, -1, -1, -1, -1],
-    [0, -1, 0, 0, -1, -1, -1, -1],
-    [0, 0, 0, -1, 0, 0, -1, 0],
-    [-1, 0, 0, -1, 0, 0, 0, 0],
-    [-1, 0, 0, 0, 0, 0, 0, -1],
-    [-1, 0, 0, -1, 0, -1, 0, -1],
-    [-1, -1, -1, -1, -1, -1, -1, -1]
-];
-static X2A_new: [[u32, ..8], ..8] = [
-    [0, 0, -1, 0, 0, -1, -1, 0],
-    [0, 0, 0, -1, -1, -1, -1, 0],
-    [0, -1, -1, -1, 0, -1, -1, 0],
-    [0, 0, -1, -1, 0, 0, 0, -1],
-    [0, 0, 0, -1, 0, -1, -1, 0],
-    [-1, 0, 0, -1, 0, -1, 0, 0],
-    [0, -1, -1, -1, -1, 0, -1, -1],
-    [0, 0, 0, 0, 0, -1, -1, 0],
-];
-static X2S_new: [[u32, ..8], ..8] = [
-    [0, 0, 0, -1, -1, 0, -1, 0],
-    [-1, 0, -1, -1, 0, -1, 0, 0],
-    [0, -1, -1, -1, -1, 0, 0, -1],
-    [-1, -1, 0, -1, 0, 0, 0, 0],
-    [0, 0, -1, -1, -1, 0, -1, -1],
-    [0, 0, -1, 0, 0, 0, 0, 0],
-    [-1, -1, 0, 0, 0, 0, 0, 0],
-    [0, 0, -1, 0, 0, -1, 0, 0],
-];
-static S2X_new: [[u32, ..8], ..8] = [
-    [0, 0, -1, -1, 0, 0, 0, -1],
-    [-1, 0, 0, -1, -1, -1, -1, 0],
-    [-1, 0, -1, 0, 0, 0, 0, 0],
-    [-1, -1, 0, -1, 0, -1, -1, -1],
-    [0, -1, 0, 0, -1, 0, 0, 0],
-    [0, 0, -1, 0, 0, 0, 0, 0],
-    [-1, 0, 0, 0, -1, 0, -1, 0],
-    [-1, -1, 0, 0, -1, 0, -1, 0],
-];
-
-// multiply in GF(2^2), using normal basis (Omega^2,Omega)
-fn g4_mul(x: bs2_state, y: bs2_state) -> bs2_state {
-    let (b, a) = x;
-    let (d, c) = y;
-    let e = (a ^ b) & (c ^ d);
-    let p = (a & c) ^ e;
-    let q = (b & d) ^ e;
-    return (q, p);
-}
-
-// scale by N = Omega^2 in GF(2^2), using normal basis (Omega^2,Omega)
-fn g4_scl_n(x: bs2_state) -> bs2_state {
-    let (b, a) = x;
-    let p = b;
-    let q = a ^ b;
-    return (q, p);
-}
-
-// scale by N^2 = Omega in GF(2^2), using normal basis (Omega^2,Omega)
-fn g4_scl_n2(x: bs2_state) -> bs2_state {
-    let (b, a) = x;
-    let p = a ^ b;
-    let q = a;
-    return (q, p);
-}
-
-// square in GF(2^2), using normal basis (Omega^2,Omega)
-// NOTE: inverse is identical
-fn g4_sq(x: bs2_state) -> bs2_state {
-    let (b, a) = x;
-    return (a, b);
-}
-
-fn g4_inv(x: bs2_state) -> bs2_state {
-    // Same as sqaure
-    return g4_sq(x);
-}
-
-// multiply in GF(2^4), using normal basis (alpha^8,alpha^2)
-fn g16_mul(x: bs4_state, y: bs4_state) -> bs4_state {
-    let (b, a) = bs4_split(x);
-    let (d, c) = bs4_split(y);
-    let e = g4_mul(bs2_xor(a, b), bs2_xor(c, d));
-    let e = g4_scl_n(e);
-    let p = bs2_xor(g4_mul(a, c), e);
-    let q = bs2_xor(g4_mul(b, d), e);
-    return bs2_join(q, p);
-}
-
-// square & scale by nu in GF(2^4)/GF(2^2), normal basis (alpha^8,alpha^2)
-// nu = beta^8 = N^2*alpha^2, N = w^2 */
-fn g16_sq_scl(x: bs4_state) -> bs4_state {
-    let (b, a) = bs4_split(x);
-    let p = g4_sq(bs2_xor(a, b));
-    let q = g4_scl_n2(g4_sq(b));
-    return bs2_join(q, p);
-}
-
-// inverse in GF(2^4), using normal basis (alpha^8,alpha^2)
-fn g16_inv(x: bs4_state) -> bs4_state {
-    let (b, a) = bs4_split(x);
-    let c = g4_scl_n(g4_sq(bs2_xor(a, b)));
-    let d = g4_mul(a, b);
-    let e = g4_inv(bs2_xor(c, d));
-    let p = g4_mul(e, b);
-    let q = g4_mul(e, a);
-    return bs2_join(q, p);
-}
-
-// inverse in GF(2^8), using normal basis (d^16,d)
-fn g256_inv(x: bs8_state) -> bs8_state {
-    let (b, a) = bs8_split(x);
-    let c = g16_sq_scl(bs4_xor(a, b));
-    let d = g16_mul(a, b);
-    let e = g16_inv(bs4_xor(c, d));
-    let p = g16_mul(e, b);
-    let q = g16_mul(e, a);
-    return bs4_join(q, p);
-}
-
-fn bs_newbasis(bs: bs8_state, arr: &[[u32, ..8], ..8]) -> bs8_state {
-    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
-
-    let mut bs0_out = 0;
-    let mut bs1_out = 0;
-    let mut bs2_out = 0;
-    let mut bs3_out = 0;
-    let mut bs4_out = 0;
-    let mut bs5_out = 0;
-    let mut bs6_out = 0;
-    let mut bs7_out = 0;
-
-    macro_rules! helper( ($bs:ident, $idx:expr) => (
-            {
-                bs0_out ^= $bs & arr[7 - $idx][0];
-                bs1_out ^= $bs & arr[7 - $idx][1];
-                bs2_out ^= $bs & arr[7 - $idx][2];
-                bs3_out ^= $bs & arr[7 - $idx][3];
-                bs4_out ^= $bs & arr[7 - $idx][4];
-                bs5_out ^= $bs & arr[7 - $idx][5];
-                bs6_out ^= $bs & arr[7 - $idx][6];
-                bs7_out ^= $bs & arr[7 - $idx][7];
-            }
-        )
-    )
-
-    helper!(bs0, 0);
-    helper!(bs1, 1);
-    helper!(bs2, 2);
-    helper!(bs3, 3);
-    helper!(bs4, 4);
-    helper!(bs5, 5);
-    helper!(bs6, 6);
-    helper!(bs7, 7);
-
-    return (bs0_out, bs1_out, bs2_out, bs3_out, bs4_out, bs5_out, bs6_out, bs7_out);
-}
-
-// find Sbox of n in GF(2^8) mod POLY
-fn sbox_bs(bs: bs8_state) -> bs8_state {
-    let nb = bs_newbasis(bs, &A2X_new);
-    let inv = g256_inv(nb);
-    let nb2 = bs_newbasis(inv, &X2S_new);
-    return bs8_xor(nb2, (-1, -1, 0, 0, 0, -1, -1, 0));
-}
-
-// find inverse Sbox of n in GF(2^8) mod POLY
-fn isbox_bs(bs: bs8_state) -> bs8_state {
-    let t = bs8_xor(bs, (-1, -1, 0, 0, 0, -1, -1, 0));
-    let nb = bs_newbasis(t, &S2X_new);
-    let inv = g256_inv(nb);
-    let nb2 = bs_newbasis(inv, &X2A_new);
-    return nb2;
+impl <T: BitXor<T, T>> Bs8State<T> {
+    fn xor(&self, rhs: &Bs8State<T>) -> Bs8State<T> {
+        let Bs8State(ref a0, ref a1, ref a2, ref a3, ref a4, ref a5, ref a6, ref a7) = *self;
+        let Bs8State(ref b0, ref b1, ref b2, ref b3, ref b4, ref b5, ref b6, ref b7) = *rhs;
+        return Bs8State(*a0 ^ *b0, *a1 ^ *b1, *a2 ^ *b2, *a3 ^ *b3,
+            *a4 ^ *b4, *a5 ^ *b5, *a6 ^ *b6, *a7 ^ *b7);
+    }
 }
 
 
-type bs8_state = (u32, u32, u32, u32, u32, u32, u32, u32);
-type bs4_state = (u32, u32, u32, u32);
-type bs2_state = (u32, u32);
+struct Bs4State<T>(T, T, T, T);
 
-fn pick(x: u32, bit: u32, shift: u32) -> u32 {
+impl <T: Clone> Bs4State<T> {
+    fn split(&self) -> (Bs2State<T>, Bs2State<T>) {
+        let Bs4State(ref x0, ref x1, ref x2, ref x3) = *self;
+        return (Bs2State(x0.clone(), x1.clone()), Bs2State(x2.clone(), x3.clone()));
+    }
+    fn join(&self, rhs: &Bs4State<T>) -> Bs8State<T> {
+        let Bs4State(ref a0, ref a1, ref a2, ref a3) = *self;
+        let Bs4State(ref b0, ref b1, ref b2, ref b3) = *rhs;
+        return Bs8State(a0.clone(), a1.clone(), a2.clone(), a3.clone(),
+            b0.clone(), b1.clone(), b2.clone(), b3.clone());
+    }
+}
+
+impl <T: BitXor<T, T>> Bs4State<T> {
+    fn xor(&self, rhs: &Bs4State<T>) -> Bs4State<T> {
+        let Bs4State(ref a0, ref a1, ref a2, ref a3) = *self;
+        let Bs4State(ref b0, ref b1, ref b2, ref b3) = *rhs;
+        return Bs4State(*a0 ^ *b0, *a1 ^ *b1, *a2 ^ *b2, *a3 ^ *b3);
+    }
+}
+
+
+struct Bs2State<T>(T, T);
+
+impl <T: Clone> Bs2State<T> {
+    fn split(&self) -> (T, T) {
+        let Bs2State(ref x0, ref x1) = *self;
+        return (x0.clone(), x1.clone());
+    }
+    fn join(&self, rhs: &Bs2State<T>) -> Bs4State<T> {
+        let Bs2State(ref a0, ref a1) = *self;
+        let Bs2State(ref b0, ref b1) = *rhs;
+        return Bs4State(a0.clone(), a1.clone(), b0.clone(), b1.clone());
+    }
+}
+
+impl <T: BitXor<T, T>> Bs2State<T> {
+    fn xor(&self, rhs: &Bs2State<T>) -> Bs2State<T> {
+        let Bs2State(ref a0, ref a1) = *self;
+        let Bs2State(ref b0, ref b1) = *rhs;
+        return Bs2State(*a0 ^ *b0, *a1 ^ *b1);
+    }
+}
+
+
+fn pb(x: u32, bit: uint, shift: uint) -> u32 {
     ((x >> bit) & 1) << shift
 }
 
-fn construct(a: u32, b: u32, c: u32, d: u32, bit: u32) -> u32 {
-//     pick(a, bit, 0)  | pick(a, bit + 8, 1)  | pick(a, bit + 16, 2)  | pick(a, bit + 24, 3) |
-//     pick(b, bit, 4)  | pick(b, bit + 8, 5)  | pick(b, bit + 16, 6)  | pick(b, bit + 24, 7) |
-//     pick(c, bit, 8)  | pick(c, bit + 8, 9)  | pick(c, bit + 16, 10) | pick(c, bit + 24, 11) |
-//     pick(d, bit, 12) | pick(d, bit + 8, 13) | pick(d, bit + 16, 14) | pick(d, bit + 24, 15)
-    pick(a, bit, 0)       | pick(b, bit, 1)       | pick(c, bit, 2)       | pick(d, bit, 3)       |
-    pick(a, bit + 8, 4)   | pick(b, bit + 8, 5)   | pick(c, bit + 8, 6)   | pick(d, bit + 8, 7)   |
-    pick(a, bit + 16, 8)  | pick(b, bit + 16, 9)  | pick(c, bit + 16, 10) | pick(d, bit + 16, 11) |
-    pick(a, bit + 24, 12) | pick(b, bit + 24, 13) | pick(c, bit + 24, 14) | pick(d, bit + 24, 15)
-}
+fn bit_splice_4x4_with_u32(a: u32, b: u32, c: u32, d: u32) -> Bs8State<u32> {
+    fn construct(a: u32, b: u32, c: u32, d: u32, bit: uint) -> u32 {
+        pb(a, bit, 0)       | pb(b, bit, 1)       | pb(c, bit, 2)       | pb(d, bit, 3)       |
+        pb(a, bit + 8, 4)   | pb(b, bit + 8, 5)   | pb(c, bit + 8, 6)   | pb(d, bit + 8, 7)   |
+        pb(a, bit + 16, 8)  | pb(b, bit + 16, 9)  | pb(c, bit + 16, 10) | pb(d, bit + 16, 11) |
+        pb(a, bit + 24, 12) | pb(b, bit + 24, 13) | pb(c, bit + 24, 14) | pb(d, bit + 24, 15)
+    }
 
-fn bs8(a: u32, b: u32, c: u32, d: u32) -> bs8_state {
     let bs0 = construct(a, b, c, d, 0);
     let bs1 = construct(a, b, c, d, 1);
     let bs2 = construct(a, b, c, d, 2);
@@ -850,102 +535,334 @@ fn bs8(a: u32, b: u32, c: u32, d: u32) -> bs8_state {
     let bs5 = construct(a, b, c, d, 5);
     let bs6 = construct(a, b, c, d, 6);
     let bs7 = construct(a, b, c, d, 7);
-    return (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7);
+
+    return Bs8State(bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7);
 }
 
-fn deconstruct(bs: bs8_state, bit: u32) -> u32 {
-    let (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = bs;
+fn bit_splice_1x16_with_u32(data: &[u8]) -> Bs8State<u32> {
+    let mut n = [0u32, ..4];
+    read_u32v_le(n, data);
 
-//     pick(bs0, bit, 0) | pick(bs1, bit, 1) | pick(bs2, bit, 2) | pick(bs3, bit, 3) |
-//     pick(bs4, bit, 4) | pick(bs5, bit, 5) | pick(bs6, bit, 6) | pick(bs7, bit, 7) |
-//
-//     pick(bs0, bit + 1, 8) | pick(bs1, bit + 1, 9) | pick(bs2, bit + 1, 10) | pick(bs3, bit + 1, 11) |
-//     pick(bs4, bit + 1, 12) | pick(bs5, bit + 1, 13) | pick(bs6, bit + 1, 14) | pick(bs7, bit + 1, 15) |
-//
-//     pick(bs0, bit + 2, 16) | pick(bs1, bit + 2, 17) | pick(bs2, bit + 2, 18) | pick(bs3, bit + 2, 19) |
-//     pick(bs4, bit + 2, 20) | pick(bs5, bit + 2, 21) | pick(bs6, bit + 2, 22) | pick(bs7, bit + 2, 23) |
-//
-//     pick(bs0, bit + 3, 24) | pick(bs1, bit + 3, 25) | pick(bs2, bit + 3, 26) | pick(bs3, bit + 3, 27) |
-//     pick(bs4, bit + 3, 28) | pick(bs5, bit + 3, 29) | pick(bs6, bit + 3, 30) | pick(bs7, bit + 3, 31)
+    let a = n[0];
+    let b = n[1];
+    let c = n[2];
+    let d = n[3];
 
-    pick(bs0, bit, 0) | pick(bs1, bit, 1) | pick(bs2, bit, 2) | pick(bs3, bit, 3) |
-    pick(bs4, bit, 4) | pick(bs5, bit, 5) | pick(bs6, bit, 6) | pick(bs7, bit, 7) |
-
-    pick(bs0, bit + 4, 8)  | pick(bs1, bit + 4, 9)  | pick(bs2, bit + 4, 10) | pick(bs3, bit + 4, 11) |
-    pick(bs4, bit + 4, 12) | pick(bs5, bit + 4, 13) | pick(bs6, bit + 4, 14) | pick(bs7, bit + 4, 15) |
-
-    pick(bs0, bit + 8, 16) | pick(bs1, bit + 8, 17) | pick(bs2, bit + 8, 18) | pick(bs3, bit + 8, 19) |
-    pick(bs4, bit + 8, 20) | pick(bs5, bit + 8, 21) | pick(bs6, bit + 8, 22) | pick(bs7, bit + 8, 23) |
-
-    pick(bs0, bit + 12, 24) | pick(bs1, bit + 12, 25) | pick(bs2, bit + 12, 26) | pick(bs3, bit + 12, 27) |
-    pick(bs4, bit + 12, 28) | pick(bs5, bit + 12, 29) | pick(bs6, bit + 12, 30) | pick(bs7, bit + 12, 31)
+    return bit_splice_4x4_with_u32(a, b, c, d);
 }
 
-fn un_bs8(bs: bs8_state) -> (u32, u32, u32, u32) {
-    let a0 = deconstruct(bs, 0);
-    let a1 = deconstruct(bs, 1);
-    let a2 = deconstruct(bs, 2);
-    let a3 = deconstruct(bs, 3);
-    return (a0, a1, a2, a3);
+fn un_bit_splice_1x16_with_u32(bs: &Bs8State<u32>, output: &mut [u8]) {
+    fn deconstruct(bs: &Bs8State<u32>, bit: uint) -> u32 {
+        let Bs8State(bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) = *bs;
+
+        pb(bs0, bit, 0) | pb(bs1, bit, 1) | pb(bs2, bit, 2) | pb(bs3, bit, 3) |
+        pb(bs4, bit, 4) | pb(bs5, bit, 5) | pb(bs6, bit, 6) | pb(bs7, bit, 7) |
+
+        pb(bs0, bit + 4, 8)  | pb(bs1, bit + 4, 9)  | pb(bs2, bit + 4, 10) | pb(bs3, bit + 4, 11) |
+        pb(bs4, bit + 4, 12) | pb(bs5, bit + 4, 13) | pb(bs6, bit + 4, 14) | pb(bs7, bit + 4, 15) |
+
+        pb(bs0, bit + 8, 16) | pb(bs1, bit + 8, 17) | pb(bs2, bit + 8, 18) | pb(bs3, bit + 8, 19) |
+        pb(bs4, bit + 8, 20) | pb(bs5, bit + 8, 21) | pb(bs6, bit + 8, 22) | pb(bs7, bit + 8, 23) |
+
+        pb(bs0, bit + 12, 24) | pb(bs1, bit + 12, 25) | pb(bs2, bit + 12, 26) | pb(bs3, bit + 12, 27) |
+        pb(bs4, bit + 12, 28) | pb(bs5, bit + 12, 29) | pb(bs6, bit + 12, 30) | pb(bs7, bit + 12, 31)
+    }
+
+    let a = deconstruct(bs, 0);
+    let b = deconstruct(bs, 1);
+    let c = deconstruct(bs, 2);
+    let d = deconstruct(bs, 3);
+
+    write_u32_le(output.mut_slice(0, 4), a);
+    write_u32_le(output.mut_slice(4, 8), b);
+    write_u32_le(output.mut_slice(8, 12), c);
+    write_u32_le(output.mut_slice(12, 16), d);
 }
 
 
-fn bs4(x: u32) -> bs4_state {
-    return (x & 1, (x >> 1) & 1, (x >> 2) & 1, (x >> 3) & 1);
-}
 
-fn un_bs4(bs: bs4_state) -> u32 {
-    let (bs0, bs1, bs2, bs3) = bs;
-    return (bs0 & 1) | ((bs1 & 1) << 1) | ((bs2 & 1) << 2) | ((bs3 & 1) << 3);
-}
 
-fn bs2(x: u32) -> bs2_state {
-    return (x & 1, (x >> 1) & 1);
-}
 
-fn un_bs2(bs: bs2_state) -> u32 {
-    let (bs0, bs1) = bs;
-    return (bs0 & 1) | ((bs1 & 1) << 1);
-}
 
-fn bs8_split(bs8: bs8_state) -> (bs4_state, bs4_state) {
-    match bs8 {
-        (bs0, bs1, bs2, bs3, bs4, bs5, bs6, bs7) => ((bs0, bs1, bs2, bs3), (bs4, bs5, bs6, bs7))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs2State<T> {
+    // multiply in GF(2^2), using normal basis (Omega^2,Omega)
+    fn mul(&self, y: &Bs2State<T>) -> Bs2State<T> {
+        let (b, a) = self.split();
+        let (d, c) = y.split();
+        let e = (a ^ b) & (c ^ d);
+        let p = (a & c) ^ e;
+        let q = (b & d) ^ e;
+        return Bs2State(q, p);
+    }
+
+    // scale by N = Omega^2 in GF(2^2), using normal basis (Omega^2,Omega)
+    fn scl_n(&self) -> Bs2State<T> {
+        let (b, a) = self.split();
+        let q = a ^ b;
+        return Bs2State(q, b);
+    }
+
+    // scale by N^2 = Omega in GF(2^2), using normal basis (Omega^2,Omega)
+    fn scl_n2(&self) -> Bs2State<T> {
+        let (b, a) = self.split();
+        let p = a ^ b;
+        let q = a;
+        return Bs2State(q, p);
+    }
+
+    // square in GF(2^2), using normal basis (Omega^2,Omega)
+    // NOTE: inverse is identical
+    fn sq(&self) -> Bs2State<T> {
+        let (b, a) = self.split();
+        return Bs2State(a, b);
+    }
+
+    fn inv(&self) -> Bs2State<T> {
+        // Same as sqaure
+        return self.sq();
     }
 }
 
-fn bs4_split(bs4: bs4_state) -> (bs2_state, bs2_state) {
-    match bs4 {
-        (bs0, bs1, bs2, bs3) => ((bs0, bs1), (bs2, bs3))
+impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs4State<T> {
+    // multiply in GF(2^4), using normal basis (alpha^8,alpha^2)
+    fn mul(&self, y: &Bs4State<T>) -> Bs4State<T> {
+        let (b, a) = self.split();
+        let (d, c) = y.split();
+        let f = c.xor(&d);
+        let e = a.xor(&b).mul(&f).scl_n();
+        let p = a.mul(&c).xor(&e);
+        let q = b.mul(&d).xor(&e);
+        return q.join(&p);
+    }
+
+    // square & scale by nu in GF(2^4)/GF(2^2), normal basis (alpha^8,alpha^2)
+    // nu = beta^8 = N^2*alpha^2, N = w^2
+    fn sq_scl(&self) -> Bs4State<T> {
+        let (b, a) = self.split();
+        let p = a.xor(&b).sq();
+        let q = b.sq().scl_n2();
+        return q.join(&p);
+    }
+
+    // inverse in GF(2^4), using normal basis (alpha^8,alpha^2)
+    fn inv(&self) -> Bs4State<T> {
+        let (b, a) = self.split();
+        let c = a.xor(&b).sq().scl_n();
+        let d = a.mul(&b);
+        let e = c.xor(&d).inv();
+        let p = e.mul(&b);
+        let q = e.mul(&a);
+        return q.join(&p);
     }
 }
 
-fn bs8_xor(a: bs8_state, b: bs8_state) -> bs8_state {
-    let (a0, a1, a2, a3, a4, a5, a6, a7) = a;
-    let (b0, b1, b2, b3, b4, b5, b6, b7) = b;
-    (a0 ^ b0, a1 ^ b1, a2 ^ b2, a3 ^ b3, a4 ^ b4, a5 ^ b5, a6 ^ b6, a7 ^ b7)
+impl <T: BitXor<T, T> + BitAnd<T, T> + Clone + Zero> Bs8State<T> {
+    // inverse in GF(2^8), using normal basis (d^16,d)
+    fn inv(&self) -> Bs8State<T> {
+        let (b, a) = self.split();
+        let c = a.xor(&b).sq_scl();
+        let d = a.mul(&b);
+        let e = c.xor(&d).inv();
+        let p = e.mul(&b);
+        let q = e.mul(&a);
+        return q.join(&p);
+    }
+
+    fn change_basis(&self, arr: &[[T, ..8], ..8]) -> Bs8State<T> {
+        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
+
+        let mut x0_out: T = Zero::zero();
+        let mut x1_out: T = Zero::zero();
+        let mut x2_out: T = Zero::zero();
+        let mut x3_out: T = Zero::zero();
+        let mut x4_out: T = Zero::zero();
+        let mut x5_out: T = Zero::zero();
+        let mut x6_out: T = Zero::zero();
+        let mut x7_out: T = Zero::zero();
+
+        /*
+        // XXX - This is prettier, but crashes
+
+        macro_rules! helper( ($x:ident, $idx:expr) => (
+                {
+                    x0_out = x0_out ^ (*($x) & arr[7 - $idx][0]);
+                    x1_out = x1_out ^ (*($x) & arr[7 - $idx][1]);
+                    x2_out = x2_out ^ (*($x) & arr[7 - $idx][2]);
+                    x3_out = x3_out ^ (*($x) & arr[7 - $idx][3]);
+                    x4_out = x4_out ^ (*($x) & arr[7 - $idx][4]);
+                    x5_out = x5_out ^ (*($x) & arr[7 - $idx][5]);
+                    x6_out = x6_out ^ (*($x) & arr[7 - $idx][6]);
+                    x7_out = x7_out ^ (*($x) & arr[7 - $idx][7]);
+                }
+            )
+        )
+
+        helper!(x0, 0);
+        helper!(x1, 1);
+        helper!(x2, 2);
+        helper!(x3, 3);
+        helper!(x4, 4);
+        helper!(x5, 5);
+        helper!(x6, 6);
+        helper!(x7, 7);
+        */
+
+        x0_out = x0_out ^ (*x0 & arr[7][0]);
+        x1_out = x1_out ^ (*x0 & arr[7][1]);
+        x2_out = x2_out ^ (*x0 & arr[7][2]);
+        x3_out = x3_out ^ (*x0 & arr[7][3]);
+        x4_out = x4_out ^ (*x0 & arr[7][4]);
+        x5_out = x5_out ^ (*x0 & arr[7][5]);
+        x6_out = x6_out ^ (*x0 & arr[7][6]);
+        x7_out = x7_out ^ (*x0 & arr[7][7]);
+
+        x0_out = x0_out ^ (*x1 & arr[6][0]);
+        x1_out = x1_out ^ (*x1 & arr[6][1]);
+        x2_out = x2_out ^ (*x1 & arr[6][2]);
+        x3_out = x3_out ^ (*x1 & arr[6][3]);
+        x4_out = x4_out ^ (*x1 & arr[6][4]);
+        x5_out = x5_out ^ (*x1 & arr[6][5]);
+        x6_out = x6_out ^ (*x1 & arr[6][6]);
+        x7_out = x7_out ^ (*x1 & arr[6][7]);
+
+        x0_out = x0_out ^ (*x2 & arr[5][0]);
+        x1_out = x1_out ^ (*x2 & arr[5][1]);
+        x2_out = x2_out ^ (*x2 & arr[5][2]);
+        x3_out = x3_out ^ (*x2 & arr[5][3]);
+        x4_out = x4_out ^ (*x2 & arr[5][4]);
+        x5_out = x5_out ^ (*x2 & arr[5][5]);
+        x6_out = x6_out ^ (*x2 & arr[5][6]);
+        x7_out = x7_out ^ (*x2 & arr[5][7]);
+
+        x0_out = x0_out ^ (*x3 & arr[4][0]);
+        x1_out = x1_out ^ (*x3 & arr[4][1]);
+        x2_out = x2_out ^ (*x3 & arr[4][2]);
+        x3_out = x3_out ^ (*x3 & arr[4][3]);
+        x4_out = x4_out ^ (*x3 & arr[4][4]);
+        x5_out = x5_out ^ (*x3 & arr[4][5]);
+        x6_out = x6_out ^ (*x3 & arr[4][6]);
+        x7_out = x7_out ^ (*x3 & arr[4][7]);
+
+        x0_out = x0_out ^ (*x4 & arr[3][0]);
+        x1_out = x1_out ^ (*x4 & arr[3][1]);
+        x2_out = x2_out ^ (*x4 & arr[3][2]);
+        x3_out = x3_out ^ (*x4 & arr[3][3]);
+        x4_out = x4_out ^ (*x4 & arr[3][4]);
+        x5_out = x5_out ^ (*x4 & arr[3][5]);
+        x6_out = x6_out ^ (*x4 & arr[3][6]);
+        x7_out = x7_out ^ (*x4 & arr[3][7]);
+
+        x0_out = x0_out ^ (*x5 & arr[2][0]);
+        x1_out = x1_out ^ (*x5 & arr[2][1]);
+        x2_out = x2_out ^ (*x5 & arr[2][2]);
+        x3_out = x3_out ^ (*x5 & arr[2][3]);
+        x4_out = x4_out ^ (*x5 & arr[2][4]);
+        x5_out = x5_out ^ (*x5 & arr[2][5]);
+        x6_out = x6_out ^ (*x5 & arr[2][6]);
+        x7_out = x7_out ^ (*x5 & arr[2][7]);
+
+        x0_out = x0_out ^ (*x6 & arr[1][0]);
+        x1_out = x1_out ^ (*x6 & arr[1][1]);
+        x2_out = x2_out ^ (*x6 & arr[1][2]);
+        x3_out = x3_out ^ (*x6 & arr[1][3]);
+        x4_out = x4_out ^ (*x6 & arr[1][4]);
+        x5_out = x5_out ^ (*x6 & arr[1][5]);
+        x6_out = x6_out ^ (*x6 & arr[1][6]);
+        x7_out = x7_out ^ (*x6 & arr[1][7]);
+
+        x0_out = x0_out ^ (*x7 & arr[0][0]);
+        x1_out = x1_out ^ (*x7 & arr[0][1]);
+        x2_out = x2_out ^ (*x7 & arr[0][2]);
+        x3_out = x3_out ^ (*x7 & arr[0][3]);
+        x4_out = x4_out ^ (*x7 & arr[0][4]);
+        x5_out = x5_out ^ (*x7 & arr[0][5]);
+        x6_out = x6_out ^ (*x7 & arr[0][6]);
+        x7_out = x7_out ^ (*x7 & arr[0][7]);
+
+        return Bs8State(x0_out, x1_out, x2_out, x3_out, x4_out, x5_out, x6_out, x7_out);
+    }
 }
 
-fn bs4_xor(a: bs4_state, b: bs4_state) -> bs4_state {
-    let (a0, a1, a2, a3) = a;
-    let (b0, b1, b2, b3) = b;
-    (a0 ^ b0, a1 ^ b1, a2 ^ b2, a3 ^ b3)
-}
+// to convert between polynomial (A^7...1) basis A & normal basis X
+// or to basis S which incorporates bit matrix of Sbox
+static A2X_new: [[u32, ..8], ..8] = [
+    [ 0,  0,  0, -1, -1,  0,  0, -1],
+    [-1, -1,  0,  0, -1, -1, -1, -1],
+    [ 0, -1,  0,  0, -1, -1, -1, -1],
+    [ 0,  0,  0, -1,  0,  0, -1,  0],
+    [-1,  0,  0, -1,  0,  0,  0,  0],
+    [-1,  0,  0,  0,  0,  0,  0, -1],
+    [-1,  0,  0, -1,  0, -1,  0, -1],
+    [-1, -1, -1, -1, -1, -1, -1, -1]
+];
+static X2A_new: [[u32, ..8], ..8] = [
+    [ 0,  0, -1,  0,  0, -1, -1,  0],
+    [ 0,  0,  0, -1, -1, -1, -1,  0],
+    [ 0, -1, -1, -1,  0, -1, -1,  0],
+    [ 0,  0, -1, -1,  0,  0,  0, -1],
+    [ 0,  0,  0, -1,  0, -1, -1,  0],
+    [-1,  0,  0, -1,  0, -1,  0,  0],
+    [ 0, -1, -1, -1, -1,  0, -1, -1],
+    [ 0,  0,  0,  0,  0, -1, -1,  0],
+];
+static X2S_new: [[u32, ..8], ..8] = [
+    [ 0,  0,  0, -1, -1,  0, -1,  0],
+    [-1,  0, -1, -1,  0, -1,  0,  0],
+    [ 0, -1, -1, -1, -1,  0,  0, -1],
+    [-1, -1,  0, -1,  0,  0,  0,  0],
+    [ 0,  0, -1, -1, -1,  0, -1, -1],
+    [ 0,  0, -1,  0,  0,  0,  0,  0],
+    [-1, -1,  0,  0,  0,  0,  0,  0],
+    [ 0,  0, -1,  0,  0, -1,  0,  0],
+];
+static S2X_new: [[u32, ..8], ..8] = [
+    [0, 0 ,  -1, -1,  0,  0,  0, -1],
+    [-1,  0,  0, -1, -1, -1, -1,  0],
+    [-1,  0, -1,  0,  0,  0,  0,  0],
+    [-1, -1,  0, -1,  0, -1, -1, -1],
+    [0,  -1,  0,  0, -1,  0,  0,  0],
+    [0,   0, -1,  0,  0,  0,  0,  0],
+    [-1,  0,  0,  0, -1,  0, -1,  0],
+    [-1, -1,  0,  0, -1,  0, -1,  0],
+];
 
-fn bs2_xor(a: bs2_state, b: bs2_state) -> bs2_state {
-    let (a0, a1) = a;
-    let (b0, b1) = b;
-    (a0 ^ b0, a1 ^ b1)
-}
 
-fn bs4_join(a: bs4_state, b: bs4_state) -> bs8_state {
-    let (a0, a1, a2, a3) = a;
-    let (b0, b1, b2, b3) = b;
-    (a0, a1, a2, a3, b0, b1, b2, b3)
-}
 
-fn bs2_join(a: bs2_state, b: bs2_state) -> bs4_state {
-    let (a0, a1) = a;
-    let (b0, b1) = b;
-    (a0, a1, b0, b1)
-}
+
+
+
+
+
+
+
+
