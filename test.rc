@@ -1,5 +1,5 @@
 
-#[crate_type = "lib"];
+// #[crate_type = "lib"];
 
 extern mod extra;
 
@@ -21,7 +21,6 @@ mod cryptoutil;
 pub mod util;
 
 
-/*
 fn main() {
     use aes::*;
     use aesdangerous::*;
@@ -31,7 +30,7 @@ fn main() {
     let key: [u8, ..16] = [1u8, ..16];
     let plain: [u8, ..16] = [2u8, ..16];
 
-    let a = AesDangerous128Encryptor::new(key);
+    let a = AesSafe128Encryptor::new(key);
 
     let mut tmp = [0u8, ..16];
 
@@ -39,4 +38,3 @@ fn main() {
         a.encrypt_block(plain, tmp);
     }
 }
-*/

@@ -602,12 +602,12 @@ mod bench {
         let key: [u8, ..16] = [1u8, ..16];
         let plain: [u8, ..128] = [2u8, ..128];
 
-        let a = AesSafe128EncryptorX8::new(key);
+        let a = AesSafe128DecryptorX8::new(key);
 
         let mut tmp = [0u8, ..128];
 
         do bh.iter {
-            a.encrypt_block(plain, tmp);
+            a.decrypt_block(plain, tmp);
         }
 
         bh.bytes = (plain.len()) as u64;

@@ -14,10 +14,13 @@ use std::uint;
 use cryptoutil::*;
 use symmetriccipher::*;
 
+#[simd]
+pub struct u32x4(u32, u32, u32, u32);
 
-macro_rules! o( () => ( Int128 { x0: 0, x1: 0, x2: 0, x3: 0 }) )
 
-macro_rules! x( () => ( Int128 { x0: -1, x1: -1, x2: -1, x3: -1 }) )
+macro_rules! o( () => ( Int128 { x: u32x4(0, 0, 0, 0) } ) )
+macro_rules! x( () => ( Int128 { x: u32x4(-1, -1, -1, -1) } ) )
+
 
 struct AesSafe128EncryptorX8 {
     sk: [Bs8State<Int128>, ..11]
@@ -794,7 +797,7 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone + Zero> Bs8State<T> {
         return q.join(&p);
     }
 
-    fn change_basis(&self, arr: &[[T, ..8], ..8]) -> Bs8State<T> {
+    fn change_basis(&self, arr: &'static [[T, ..8], ..8]) -> Bs8State<T> {
         let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
 
         let mut x0_out: T = Zero::zero();
@@ -960,23 +963,54 @@ static S2X_u32: [[u32, ..8], ..8] = [
 
 
 
-
-#[deriving(Clone, Eq)]
 struct Int128 {
-    x0: u32,
-    x1: u32,
-    x2: u32,
-    x3: u32
+    x: u32x4
 }
 
+impl Int128 {
+    fn o() -> Int128 {
+        return Int128 {x: u32x4(0, 0, 0, 0)};
+    }
+    fn x() -> Int128 {
+        return Int128 {x: u32x4(-1, -1, -1, -1)};
+    }
+
+    fn x0(&self) -> u32 {
+        let u32x4(a0, _, _, _) = self.x;
+        return a0;
+    }
+    fn x1(&self) -> u32 {
+        let u32x4(_, a1, _, _) = self.x;
+        return a1;
+    }
+    fn x2(&self) -> u32 {
+        let u32x4(_, _, a2, _) = self.x;
+        return a2;
+    }
+    fn x3(&self) -> u32 {
+        let u32x4(_, _, _, a3) = self.x;
+        return a3;
+    }
+}
+
+impl Clone for Int128 {
+    fn clone(&self) -> Int128 {
+        return Int128 { x: self.x };
+    }
+}
+
+impl Eq for Int128 {
+    fn eq(&self, other: &Int128) -> bool {
+        let u32x4(a0, a1, a2, a3) = self.x;
+        let u32x4(b0, b1, b2, b3) = other.x;
+        return a0 == b0 && a1 == b1 && a2 == b2 && a3 == b3;
+    }
+}
 
 impl BitXor<Int128, Int128> for Int128 {
     fn bitxor(&self, rhs: &Int128) -> Int128 {
         return Int128 {
-            x0: self.x0 ^ rhs.x0,
-            x1: self.x1 ^ rhs.x1,
-            x2: self.x2 ^ rhs.x2,
-            x3: self.x3 ^ rhs.x3
+            x: self.x ^ rhs.x
         };
     }
 }
@@ -984,17 +1018,14 @@ impl BitXor<Int128, Int128> for Int128 {
 impl BitAnd<Int128, Int128> for Int128 {
     fn bitand(&self, rhs: &Int128) -> Int128 {
         return Int128 {
-            x0: self.x0 & rhs.x0,
-            x1: self.x1 & rhs.x1,
-            x2: self.x2 & rhs.x2,
-            x3: self.x3 & rhs.x3
+            x: self.x & rhs.x
         };
     }
 }
 
 impl Zero for Int128 {
     fn zero() -> Int128 {
-        return Int128 {x0: 0, x1: 0, x2: 0, x3: 0};
+        return Int128 {x: u32x4(0, 0, 0, 0)};
     }
     fn is_zero(&self) -> bool {
         return *self == Zero::zero();
@@ -1002,55 +1033,46 @@ impl Zero for Int128 {
 }
 
 impl AesRowTypeOps for Int128 {
-    fn a2x() -> &'static [[Int128, ..8], ..8] { &A2X_int128 }
-    fn x2s() -> &'static [[Int128, ..8], ..8] { &X2S_int128 }
-    fn s2x() -> &'static [[Int128, ..8], ..8] { &S2X_int128 }
-    fn x2a() -> &'static [[Int128, ..8], ..8] { &X2A_int128 }
+    fn a2x() -> &'static [[Int128, ..8], ..8] { &a2x_int128 }
+    fn x2s() -> &'static [[Int128, ..8], ..8] { &x2s_int128 }
+    fn s2x() -> &'static [[Int128, ..8], ..8] { &s2x_int128 }
+    fn x2a() -> &'static [[Int128, ..8], ..8] { &x2a_int128 }
     fn x63() -> Bs8State<Int128> { Bs8State(x!(), x!(), o!(), o!(), o!(), x!(), x!(), o!()) }
 
     fn shift_row(&self) -> Int128 {
+        let u32x4(a0, a1, a2, a3) = self.x;
         return Int128 {
-            x0: self.x0,
-            x1: self.x1 >> 8 | self.x1 << 24,
-            x2: self.x2 >> 16 | self.x2 << 16,
-            x3: self.x3 >> 24 | self.x3 << 8
+            x: u32x4(a0, a1 >> 8 | a1 << 24, a2 >> 16 | a2 << 16, a3 >> 24 | a3 << 8)
         };
     }
     fn inv_shift_row(&self) -> Int128 {
+        let u32x4(a0, a1, a2, a3) = self.x;
         return Int128 {
-            x0: self.x0,
-            x1: self.x1 >> 24 | self.x1 << 8,
-            x2: self.x2 >> 16 | self.x2 << 16,
-            x3: self.x3 >> 8 | self.x3 << 24
+            x: u32x4(a0, a1 >> 24 | a1 << 8, a2 >> 16 | a2 << 16, a3 >> 8 | a3 << 24)
         };
     }
     fn ror1(&self) -> Int128 {
+        let u32x4(a0, a1, a2, a3) = self.x;
         return Int128 {
-            x0: self.x1,
-            x1: self.x2,
-            x2: self.x3,
-            x3: self.x0
+            x: u32x4(a1, a2, a3, a0)
         };
     }
     fn ror2(&self) -> Int128 {
+        let u32x4(a0, a1, a2, a3) = self.x;
         return Int128 {
-            x0: self.x2,
-            x1: self.x3,
-            x2: self.x0,
-            x3: self.x1
+            x: u32x4(a2, a3, a0, a1)
         };
     }
     fn ror3(&self) -> Int128 {
+        let u32x4(a0, a1, a2, a3) = self.x;
         return Int128 {
-            x0: self.x3,
-            x1: self.x0,
-            x2: self.x1,
-            x3: self.x2
+            x: u32x4(a3, a0, a1, a2)
         };
     }
 }
 
-static A2X_int128: [[Int128, ..8], ..8] = [
+
+static a2x_int128: [[Int128, ..8], ..8] = [
     [o!(), o!(), o!(), x!(), x!(), o!(), o!(), x!()],
     [x!(), x!(), o!(), o!(), x!(), x!(), x!(), x!()],
     [o!(), x!(), o!(), o!(), x!(), x!(), x!(), x!()],
@@ -1060,7 +1082,7 @@ static A2X_int128: [[Int128, ..8], ..8] = [
     [x!(), o!(), o!(), x!(), o!(), x!(), o!(), x!()],
     [x!(), x!(), x!(), x!(), x!(), x!(), x!(), x!()]
 ];
-static X2A_int128: [[Int128, ..8], ..8] = [
+static x2a_int128: [[Int128, ..8], ..8] = [
     [o!(), o!(), x!(), o!(), o!(), x!(), x!(), o!()],
     [o!(), o!(), o!(), x!(), x!(), x!(), x!(), o!()],
     [o!(), x!(), x!(), x!(), o!(), x!(), x!(), o!()],
@@ -1070,7 +1092,7 @@ static X2A_int128: [[Int128, ..8], ..8] = [
     [o!(), x!(), x!(), x!(), x!(), o!(), x!(), x!()],
     [o!(), o!(), o!(), o!(), o!(), x!(), x!(), o!()],
 ];
-static X2S_int128: [[Int128, ..8], ..8] = [
+static x2s_int128: [[Int128, ..8], ..8] = [
     [o!(), o!(), o!(), x!(), x!(), o!(), x!(), o!()],
     [x!(), o!(), x!(), x!(), o!(), x!(), o!(), o!()],
     [o!(), x!(), x!(), x!(), x!(), o!(), o!(), x!()],
@@ -1080,8 +1102,8 @@ static X2S_int128: [[Int128, ..8], ..8] = [
     [x!(), x!(), o!(), o!(), o!(), o!(), o!(), o!()],
     [o!(), o!(), x!(), o!(), o!(), x!(), o!(), o!()],
 ];
-static S2X_int128: [[Int128, ..8], ..8] = [
-    [o!(), o!() , x!(), x!(), o!(), o!(), o!(), x!()],
+static s2x_int128: [[Int128, ..8], ..8] = [
+    [o!(), o!(), x!(), x!(), o!(), o!(), o!(), x!()],
     [x!(), o!(), o!(), x!(), x!(), x!(), x!(), o!()],
     [x!(), o!(), x!(), o!(), o!(), o!(), o!(), o!()],
     [x!(), x!(), o!(), x!(), o!(), x!(), x!(), x!()],
@@ -1091,57 +1113,44 @@ static S2X_int128: [[Int128, ..8], ..8] = [
     [x!(), x!(), o!(), o!(), x!(), o!(), x!(), o!()],
 ];
 
-
 fn bit_splice_1x128_with_int128(data: &[u8]) -> Bs8State<Int128> {
-//     fn construct_word(data: &[u8], byte: uint, bit: uint) -> u32 {
-//         let mut tmp: u32 = 0;
-//         for i in range(0u, 8) {
-//             tmp |= pb(data[i * 16 + byte] as u32, bit, i);
-//         }
-//         for i in range(0u, 8) {
-//             tmp |= pb(data[i * 16 + byte + 1] as u32, bit, i + 8);
-//         }
-//         for i in range(0u, 8) {
-//             tmp |= pb(data[i * 16 + byte + 2] as u32, bit, i + 16);
-//         }
-//         for i in range(0u, 8) {
-//             tmp |= pb(data[i * 16 + byte + 3] as u32, bit, i + 24);
-//         }
-//         return tmp;
-//     }
-//
-//     fn construct_int128(data: &[u8], bit: uint) -> Int128 {
-//         let x0 = construct_word(data, 0, bit);
-//         let x1 = construct_word(data, 4, bit);
-//         let x2 = construct_word(data, 8, bit);
-//         let x3 = construct_word(data, 12, bit);
-//         return Int128 {
-//             x0: x0,
-//             x1: x1,
-//             x2: x2,
-//             x3: x3
-//         };
-//     }
-//
-//     let x0 = construct_int128(data, 0);
-//     let x1 = construct_int128(data, 1);
-//     let x2 = construct_int128(data, 2);
-//     let x3 = construct_int128(data, 3);
-//     let x4 = construct_int128(data, 4);
-//     let x5 = construct_int128(data, 5);
-//     let x6 = construct_int128(data, 6);
-//     let x7 = construct_int128(data, 7);
-//
-//     return Bs8State(x0, x1, x2, x3, x4, x5, x6, x7);
-    return Bs8State(
-        Int128 { x0: data[0] as u32, x1: data[0] as u32, x2: data[0] as u32, x3: data[0] as u32 },
-        Int128 { x0: data[0] as u32, x1: data[0] as u32, x2: data[0] as u32, x3: data[0] as u32 },
-        Int128 { x0: data[0] as u32, x1: data[0] as u32, x2: data[0] as u32, x3: data[0] as u32 },
-        Int128 { x0: data[0] as u32, x1: data[0] as u32, x2: data[0] as u32, x3: data[0] as u32 },
-        Int128 { x0: data[0] as u32, x1: data[0] as u32, x2: data[0] as u32, x3: data[0] as u32 },
-        Int128 { x0: data[0] as u32, x1: data[0] as u32, x2: data[0] as u32, x3: data[0] as u32 },
-        Int128 { x0: data[0] as u32, x1: data[0] as u32, x2: data[0] as u32, x3: data[0] as u32 },
-        Int128 { x0: data[0] as u32, x1: data[0] as u32, x2: data[0] as u32, x3: data[0] as u32 });
+    fn construct_word(data: &[u8], byte: uint, bit: uint) -> u32 {
+        let mut tmp: u32 = 0;
+        for i in range(0u, 8) {
+            tmp |= pb(data[i * 16 + byte] as u32, bit, i);
+        }
+        for i in range(0u, 8) {
+            tmp |= pb(data[i * 16 + byte + 1] as u32, bit, i + 8);
+        }
+        for i in range(0u, 8) {
+            tmp |= pb(data[i * 16 + byte + 2] as u32, bit, i + 16);
+        }
+        for i in range(0u, 8) {
+            tmp |= pb(data[i * 16 + byte + 3] as u32, bit, i + 24);
+        }
+        return tmp;
+    }
+
+    fn construct_int128(data: &[u8], bit: uint) -> Int128 {
+        let x0 = construct_word(data, 0, bit);
+        let x1 = construct_word(data, 4, bit);
+        let x2 = construct_word(data, 8, bit);
+        let x3 = construct_word(data, 12, bit);
+        return Int128 {
+            x: u32x4(x0, x1, x2, x3)
+        };
+    }
+
+    let x0 = construct_int128(data, 0);
+    let x1 = construct_int128(data, 1);
+    let x2 = construct_int128(data, 2);
+    let x3 = construct_int128(data, 3);
+    let x4 = construct_int128(data, 4);
+    let x5 = construct_int128(data, 5);
+    let x6 = construct_int128(data, 6);
+    let x7 = construct_int128(data, 7);
+
+    return Bs8State(x0, x1, x2, x3, x4, x5, x6, x7);
 }
 
 fn bit_splice_fill_4x4_with_int128(a: u32, b: u32, c: u32, d: u32) -> Bs8State<Int128> {
@@ -1163,92 +1172,87 @@ fn bit_splice_fill_4x4_with_int128(a: u32, b: u32, c: u32, d: u32) -> Bs8State<I
 
 fn un_bit_splice_1x128_with_int128(bs: &Bs8State<Int128>, output: &mut [u8]) {
     let Bs8State(y0, y1, y2, y3, y4, y5, y6, y7) = *bs;
-
-    for i in range(0, 128) {
-        output[i] = y0.x0 as u8;
+    for i in range(0u, 8) {
+        output[i * 16] = (
+            pb(y0.x0(), i, 0) | pb(y1.x0(), i, 1) | pb(y2.x0(), i, 2) | pb(y3.x0(), i, 3) |
+            pb(y4.x0(), i, 4) | pb(y5.x0(), i, 5) | pb(y6.x0(), i, 6) | pb(y7.x0(), i, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 1] = (
+            pb(y0.x0(), i + 8, 0) | pb(y1.x0(), i + 8, 1) | pb(y2.x0(), i + 8, 2) | pb(y3.x0(), i + 8, 3) |
+            pb(y4.x0(), i + 8, 4) | pb(y5.x0(), i + 8, 5) | pb(y6.x0(), i + 8, 6) | pb(y7.x0(), i + 8, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 2] = (
+            pb(y0.x0(), i + 16, 0) | pb(y1.x0(), i + 16, 1) | pb(y2.x0(), i + 16, 2) | pb(y3.x0(), i + 16, 3) |
+            pb(y4.x0(), i + 16, 4) | pb(y5.x0(), i + 16, 5) | pb(y6.x0(), i + 16, 6) | pb(y7.x0(), i + 16, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 3] = (
+            pb(y0.x0(), i + 24, 0) | pb(y1.x0(), i + 24, 1) | pb(y2.x0(), i + 24, 2) | pb(y3.x0(), i + 24, 3) |
+            pb(y4.x0(), i + 24, 4) | pb(y5.x0(), i + 24, 5) | pb(y6.x0(), i + 24, 6) | pb(y7.x0(), i + 24, 7)) as u8;
     }
 
-//     for i in range(0u, 8) {
-//         output[i * 16] = (
-//             pb(y0.x0, i, 0) | pb(y1.x0, i, 1) | pb(y2.x0, i, 2) | pb(y3.x0, i, 3) |
-//             pb(y4.x0, i, 4) | pb(y5.x0, i, 5) | pb(y6.x0, i, 6) | pb(y7.x0, i, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 1] = (
-//             pb(y0.x0, i + 8, 0) | pb(y1.x0, i + 8, 1) | pb(y2.x0, i + 8, 2) | pb(y3.x0, i + 8, 3) |
-//             pb(y4.x0, i + 8, 4) | pb(y5.x0, i + 8, 5) | pb(y6.x0, i + 8, 6) | pb(y7.x0, i + 8, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 2] = (
-//             pb(y0.x0, i + 16, 0) | pb(y1.x0, i + 16, 1) | pb(y2.x0, i + 16, 2) | pb(y3.x0, i + 16, 3) |
-//             pb(y4.x0, i + 16, 4) | pb(y5.x0, i + 16, 5) | pb(y6.x0, i + 16, 6) | pb(y7.x0, i + 16, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 3] = (
-//             pb(y0.x0, i + 24, 0) | pb(y1.x0, i + 24, 1) | pb(y2.x0, i + 24, 2) | pb(y3.x0, i + 24, 3) |
-//             pb(y4.x0, i + 24, 4) | pb(y5.x0, i + 24, 5) | pb(y6.x0, i + 24, 6) | pb(y7.x0, i + 24, 7)) as u8;
-//     }
-//
-//     for i in range(0u, 8) {
-//         output[i * 16 + 4] = (
-//             pb(y0.x1, i, 0) | pb(y1.x1, i, 1) | pb(y2.x1, i, 2) | pb(y3.x1, i, 3) |
-//             pb(y4.x1, i, 4) | pb(y5.x1, i, 5) | pb(y6.x1, i, 6) | pb(y7.x1, i, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 5] = (
-//             pb(y0.x1, i + 8, 0) | pb(y1.x1, i + 8, 1) | pb(y2.x1, i + 8, 2) | pb(y3.x1, i + 8, 3) |
-//             pb(y4.x1, i + 8, 4) | pb(y5.x1, i + 8, 5) | pb(y6.x1, i + 8, 6) | pb(y7.x1, i + 8, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 6] = (
-//             pb(y0.x1, i + 16, 0) | pb(y1.x1, i + 16, 1) | pb(y2.x1, i + 16, 2) | pb(y3.x1, i + 16, 3) |
-//             pb(y4.x1, i + 16, 4) | pb(y5.x1, i + 16, 5) | pb(y6.x1, i + 16, 6) | pb(y7.x1, i + 16, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 7] = (
-//             pb(y0.x1, i + 24, 0) | pb(y1.x1, i + 24, 1) | pb(y2.x1, i + 24, 2) | pb(y3.x1, i + 24, 3) |
-//             pb(y4.x1, i + 24, 4) | pb(y5.x1, i + 24, 5) | pb(y6.x1, i + 24, 6) | pb(y7.x1, i + 24, 7)) as u8;
-//     }
-//
-//     for i in range(0u, 8) {
-//         output[i * 16 + 8] = (
-//             pb(y0.x2, i, 0) | pb(y1.x2, i, 1) | pb(y2.x2, i, 2) | pb(y3.x2, i, 3) |
-//             pb(y4.x2, i, 4) | pb(y5.x2, i, 5) | pb(y6.x2, i, 6) | pb(y7.x2, i, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 9] = (
-//             pb(y0.x2, i + 8, 0) | pb(y1.x2, i + 8, 1) | pb(y2.x2, i + 8, 2) | pb(y3.x2, i + 8, 3) |
-//             pb(y4.x2, i + 8, 4) | pb(y5.x2, i + 8, 5) | pb(y6.x2, i + 8, 6) | pb(y7.x2, i + 8, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 10] = (
-//             pb(y0.x2, i + 16, 0) | pb(y1.x2, i + 16, 1) | pb(y2.x2, i + 16, 2) | pb(y3.x2, i + 16, 3) |
-//             pb(y4.x2, i + 16, 4) | pb(y5.x2, i + 16, 5) | pb(y6.x2, i + 16, 6) | pb(y7.x2, i + 16, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 11] = (
-//             pb(y0.x2, i + 24, 0) | pb(y1.x2, i + 24, 1) | pb(y2.x2, i + 24, 2) | pb(y3.x2, i + 24, 3) |
-//             pb(y4.x2, i + 24, 4) | pb(y5.x2, i + 24, 5) | pb(y6.x2, i + 24, 6) | pb(y7.x2, i + 24, 7)) as u8;
-//     }
-//
-//     for i in range(0u, 8) {
-//         output[i * 16 + 12] = (
-//             pb(y0.x3, i, 0) | pb(y1.x3, i, 1) | pb(y2.x3, i, 2) | pb(y3.x3, i, 3) |
-//             pb(y4.x3, i, 4) | pb(y5.x3, i, 5) | pb(y6.x3, i, 6) | pb(y7.x3, i, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 13] = (
-//             pb(y0.x3, i + 8, 0) | pb(y1.x3, i + 8, 1) | pb(y2.x3, i + 8, 2) | pb(y3.x3, i + 8, 3) |
-//             pb(y4.x3, i + 8, 4) | pb(y5.x3, i + 8, 5) | pb(y6.x3, i + 8, 6) | pb(y7.x3, i + 8, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 14] = (
-//             pb(y0.x3, i + 16, 0) | pb(y1.x3, i + 16, 1) | pb(y2.x3, i + 16, 2) | pb(y3.x3, i + 16, 3) |
-//             pb(y4.x3, i + 16, 4) | pb(y5.x3, i + 16, 5) | pb(y6.x3, i + 16, 6) | pb(y7.x3, i + 16, 7)) as u8;
-//     }
-//     for i in range(0u, 8) {
-//         output[i * 16 + 15] = (
-//             pb(y0.x3, i + 24, 0) | pb(y1.x3, i + 24, 1) | pb(y2.x3, i + 24, 2) | pb(y3.x3, i + 24, 3) |
-//             pb(y4.x3, i + 24, 4) | pb(y5.x3, i + 24, 5) | pb(y6.x3, i + 24, 6) | pb(y7.x3, i + 24, 7)) as u8;
-//     }
+    for i in range(0u, 8) {
+        output[i * 16 + 4] = (
+            pb(y0.x1(), i, 0) | pb(y1.x1(), i, 1) | pb(y2.x1(), i, 2) | pb(y3.x1(), i, 3) |
+            pb(y4.x1(), i, 4) | pb(y5.x1(), i, 5) | pb(y6.x1(), i, 6) | pb(y7.x1(), i, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 5] = (
+            pb(y0.x1(), i + 8, 0) | pb(y1.x1(), i + 8, 1) | pb(y2.x1(), i + 8, 2) | pb(y3.x1(), i + 8, 3) |
+            pb(y4.x1(), i + 8, 4) | pb(y5.x1(), i + 8, 5) | pb(y6.x1(), i + 8, 6) | pb(y7.x1(), i + 8, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 6] = (
+            pb(y0.x1(), i + 16, 0) | pb(y1.x1(), i + 16, 1) | pb(y2.x1(), i + 16, 2) | pb(y3.x1(), i + 16, 3) |
+            pb(y4.x1(), i + 16, 4) | pb(y5.x1(), i + 16, 5) | pb(y6.x1(), i + 16, 6) | pb(y7.x1(), i + 16, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 7] = (
+            pb(y0.x1(), i + 24, 0) | pb(y1.x1(), i + 24, 1) | pb(y2.x1(), i + 24, 2) | pb(y3.x1(), i + 24, 3) |
+            pb(y4.x1(), i + 24, 4) | pb(y5.x1(), i + 24, 5) | pb(y6.x1(), i + 24, 6) | pb(y7.x1(), i + 24, 7)) as u8;
+    }
+
+    for i in range(0u, 8) {
+        output[i * 16 + 8] = (
+            pb(y0.x2(), i, 0) | pb(y1.x2(), i, 1) | pb(y2.x2(), i, 2) | pb(y3.x2(), i, 3) |
+            pb(y4.x2(), i, 4) | pb(y5.x2(), i, 5) | pb(y6.x2(), i, 6) | pb(y7.x2(), i, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 9] = (
+            pb(y0.x2(), i + 8, 0) | pb(y1.x2(), i + 8, 1) | pb(y2.x2(), i + 8, 2) | pb(y3.x2(), i + 8, 3) |
+            pb(y4.x2(), i + 8, 4) | pb(y5.x2(), i + 8, 5) | pb(y6.x2(), i + 8, 6) | pb(y7.x2(), i + 8, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 10] = (
+            pb(y0.x2(), i + 16, 0) | pb(y1.x2(), i + 16, 1) | pb(y2.x2(), i + 16, 2) | pb(y3.x2(), i + 16, 3) |
+            pb(y4.x2(), i + 16, 4) | pb(y5.x2(), i + 16, 5) | pb(y6.x2(), i + 16, 6) | pb(y7.x2(), i + 16, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 11] = (
+            pb(y0.x2(), i + 24, 0) | pb(y1.x2(), i + 24, 1) | pb(y2.x2(), i + 24, 2) | pb(y3.x2(), i + 24, 3) |
+            pb(y4.x2(), i + 24, 4) | pb(y5.x2(), i + 24, 5) | pb(y6.x2(), i + 24, 6) | pb(y7.x2(), i + 24, 7)) as u8;
+    }
+
+    for i in range(0u, 8) {
+        output[i * 16 + 12] = (
+            pb(y0.x3(), i, 0) | pb(y1.x3(), i, 1) | pb(y2.x3(), i, 2) | pb(y3.x3(), i, 3) |
+            pb(y4.x3(), i, 4) | pb(y5.x3(), i, 5) | pb(y6.x3(), i, 6) | pb(y7.x3(), i, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 13] = (
+            pb(y0.x3(), i + 8, 0) | pb(y1.x3(), i + 8, 1) | pb(y2.x3(), i + 8, 2) | pb(y3.x3(), i + 8, 3) |
+            pb(y4.x3(), i + 8, 4) | pb(y5.x3(), i + 8, 5) | pb(y6.x3(), i + 8, 6) | pb(y7.x3(), i + 8, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 14] = (
+            pb(y0.x3(), i + 16, 0) | pb(y1.x3(), i + 16, 1) | pb(y2.x3(), i + 16, 2) | pb(y3.x3(), i + 16, 3) |
+            pb(y4.x3(), i + 16, 4) | pb(y5.x3(), i + 16, 5) | pb(y6.x3(), i + 16, 6) | pb(y7.x3(), i + 16, 7)) as u8;
+    }
+    for i in range(0u, 8) {
+        output[i * 16 + 15] = (
+            pb(y0.x3(), i + 24, 0) | pb(y1.x3(), i + 24, 1) | pb(y2.x3(), i + 24, 2) | pb(y3.x3(), i + 24, 3) |
+            pb(y4.x3(), i + 24, 4) | pb(y5.x3(), i + 24, 5) | pb(y6.x3(), i + 24, 6) | pb(y7.x3(), i + 24, 7)) as u8;
+    }
 }
