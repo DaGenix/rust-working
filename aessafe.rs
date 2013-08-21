@@ -15,7 +15,7 @@ use cryptoutil::*;
 use symmetriccipher::*;
 
 #[simd]
-#[deriving(Clone,Eq)]
+#[deriving(Clone, Eq)]
 pub struct u32x4(u32, u32, u32, u32);
 
 
@@ -965,22 +965,6 @@ static S2X_u32: [[u32, ..8], ..8] = [
 
 
 impl u32x4 {
-    fn x0(&self) -> u32 {
-        let u32x4(a0, _, _, _) = *self;
-        return a0;
-    }
-    fn x1(&self) -> u32 {
-        let u32x4(_, a1, _, _) = *self;
-        return a1;
-    }
-    fn x2(&self) -> u32 {
-        let u32x4(_, _, a2, _) = *self;
-        return a2;
-    }
-    fn x3(&self) -> u32 {
-        let u32x4(_, _, _, a3) = *self;
-        return a3;
-    }
     fn lsh(&self, s: uint) -> u32x4 {
         let u32x4(a0, a1, a2, a3) = *self;
         return u32x4(
@@ -1165,125 +1149,62 @@ fn bit_splice_fill_4x4_with_int128(a: u32, b: u32, c: u32, d: u32) -> Bs8State<u
 }
 
 fn un_bit_splice_1x128_with_int128(bs: &Bs8State<u32x4>, output: &mut [u8]) {
-    let Bs8State(y0, y1, y2, y3, y4, y5, y6, y7) = *bs;
-    for i in range(0u, 8) {
-        output[i * 16] = (
-            pb(y0.x0(), i, 0) | pb(y1.x0(), i, 1) | pb(y2.x0(), i, 2) | pb(y3.x0(), i, 3) |
-            pb(y4.x0(), i, 4) | pb(y5.x0(), i, 5) | pb(y6.x0(), i, 6) | pb(y7.x0(), i, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 1] = (
-            pb(y0.x1(), i, 0) | pb(y1.x1(), i, 1) | pb(y2.x1(), i, 2) | pb(y3.x1(), i, 3) |
-            pb(y4.x1(), i, 4) | pb(y5.x1(), i, 5) | pb(y6.x1(), i, 6) | pb(y7.x1(), i, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 2] = (
-            pb(y0.x2(), i, 0) | pb(y1.x2(), i, 1) | pb(y2.x2(), i, 2) | pb(y3.x2(), i, 3) |
-            pb(y4.x2(), i, 4) | pb(y5.x2(), i, 5) | pb(y6.x2(), i, 6) | pb(y7.x2(), i, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 3] = (
-            pb(y0.x3(), i, 0) | pb(y1.x3(), i, 1) | pb(y2.x3(), i, 2) | pb(y3.x3(), i, 3) |
-            pb(y4.x3(), i, 4) | pb(y5.x3(), i, 5) | pb(y6.x3(), i, 6) | pb(y7.x3(), i, 7)) as u8;
+    let Bs8State(t0, t1, t2, t3, t4, t5, t6, t7) = *bs;
+
+    let bit0 = u32x4(0x01010101, 0x01010101, 0x01010101, 0x01010101);
+    let bit1 = u32x4(0x02020202, 0x02020202, 0x02020202, 0x02020202);
+    let bit2 = u32x4(0x04040404, 0x04040404, 0x04040404, 0x04040404);
+    let bit3 = u32x4(0x08080808, 0x08080808, 0x08080808, 0x08080808);
+    let bit4 = u32x4(0x10101010, 0x10101010, 0x10101010, 0x10101010);
+    let bit5 = u32x4(0x20202020, 0x20202020, 0x20202020, 0x20202020);
+    let bit6 = u32x4(0x40404040, 0x40404040, 0x40404040, 0x40404040);
+    let bit7 = u32x4(0x80808080, 0x80808080, 0x80808080, 0x80808080);
+
+    // decode the individual blocks, in row-major order
+    // TODO: this is identical to the same block in bit_splice_1x128_with_int128
+    let x0 = ((t0) & bit0) | ((t1.lsh(1)) & bit1) | ((t2.lsh(2)) & bit2) | ((t3.lsh(3)) & bit3) |
+        ((t4.lsh(4)) & bit4) | ((t5.lsh(5)) & bit5) | ((t6.lsh(6)) & bit6) | ((t7.lsh(7)) & bit7);
+    let x1 = ((t0.rsh(1)) & bit0) | ((t1) & bit1) | ((t2.lsh(1)) & bit2) | ((t3.lsh(2)) & bit3) |
+        ((t4.lsh(3)) & bit4) | ((t5.lsh(4)) & bit5) | ((t6.lsh(5)) & bit6) | ((t7.lsh(6)) & bit7);
+    let x2 = ((t0.rsh(2)) & bit0) | ((t1.rsh(1)) & bit1) | ((t2) & bit2) | ((t3.lsh(1)) & bit3) |
+        ((t4.lsh(2)) & bit4) | ((t5.lsh(3)) & bit5) | ((t6.lsh(4)) & bit6) | ((t7.lsh(5)) & bit7);
+    let x3 = ((t0.rsh(3)) & bit0) | ((t1.rsh(2)) & bit1) | ((t2.rsh(1)) & bit2) | ((t3) & bit3) |
+        ((t4.lsh(1)) & bit4) | ((t5.lsh(2)) & bit5) | ((t6.lsh(3)) & bit6) | ((t7.lsh(4)) & bit7);
+    let x4 = ((t0.rsh(4)) & bit0) | ((t1.rsh(3)) & bit1) | ((t2.rsh(2)) & bit2) | ((t3.rsh(1)) & bit3) |
+        ((t4) & bit4) | ((t5.lsh(1)) & bit5) | ((t6.lsh(2)) & bit6) | ((t7.lsh(3)) & bit7);
+    let x5 = ((t0.rsh(5)) & bit0) | ((t1.rsh(4)) & bit1) | ((t2.rsh(3)) & bit2) | ((t3.rsh(2)) & bit3) |
+        ((t4.rsh(1)) & bit4) | ((t5) & bit5) | ((t6.lsh(1)) & bit6) | ((t7.lsh(2)) & bit7);
+    let x6 = ((t0.rsh(6)) & bit0) | ((t1.rsh(5)) & bit1) | ((t2.rsh(4)) & bit2) | ((t3.rsh(3)) & bit3) |
+        ((t4.rsh(2)) & bit4) | ((t5.rsh(1)) & bit5) | ((t6) & bit6) | ((t7.lsh(1)) & bit7);
+    let x7 = ((t0.rsh(7)) & bit0) | ((t1.rsh(6)) & bit1) | ((t2.rsh(5)) & bit2) | ((t3.rsh(4)) & bit3) |
+        ((t4.rsh(3)) & bit4) | ((t5.rsh(2)) & bit5) | ((t6.rsh(1)) & bit6) | ((t7) & bit7);
+
+    fn write_row_major(block: &u32x4, output: &mut [u8]) {
+        let u32x4(a0, a1, a2, a3) = *block;
+        output[0] = a0 as u8;
+        output[1] = a1 as u8;
+        output[2] = a2 as u8;
+        output[3] = a3 as u8;
+        output[4] = (a0 >> 8) as u8;
+        output[5] = (a1 >> 8) as u8;
+        output[6] = (a2 >> 8) as u8;
+        output[7] = (a3 >> 8) as u8;
+        output[8] = (a0 >> 16) as u8;
+        output[9] = (a1 >> 16) as u8;
+        output[10] = (a2 >> 16) as u8;
+        output[11] = (a3 >> 16) as u8;
+        output[12] = (a0 >> 24) as u8;
+        output[13] = (a1 >> 24) as u8;
+        output[14] = (a2 >> 24) as u8;
+        output[15] = (a3 >> 24) as u8;
     }
 
-
-    for i in range(0u, 8) {
-        output[i * 16 + 4] = (
-            pb(y0.x0(), i + 8, 0) | pb(y1.x0(), i + 8, 1) | pb(y2.x0(), i + 8, 2) | pb(y3.x0(), i + 8, 3) |
-            pb(y4.x0(), i + 8, 4) | pb(y5.x0(), i + 8, 5) | pb(y6.x0(), i + 8, 6) | pb(y7.x0(), i + 8, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 5] = (
-            pb(y0.x1(), i + 8, 0) | pb(y1.x1(), i + 8, 1) | pb(y2.x1(), i + 8, 2) | pb(y3.x1(), i + 8, 3) |
-            pb(y4.x1(), i + 8, 4) | pb(y5.x1(), i + 8, 5) | pb(y6.x1(), i + 8, 6) | pb(y7.x1(), i + 8, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 6] = (
-            pb(y0.x2(), i + 8, 0) | pb(y1.x2(), i + 8, 1) | pb(y2.x2(), i + 8, 2) | pb(y3.x2(), i + 8, 3) |
-            pb(y4.x2(), i + 8, 4) | pb(y5.x2(), i + 8, 5) | pb(y6.x2(), i + 8, 6) | pb(y7.x2(), i + 8, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 7] = (
-            pb(y0.x3(), i + 8, 0) | pb(y1.x3(), i + 8, 1) | pb(y2.x3(), i + 8, 2) | pb(y3.x3(), i + 8, 3) |
-            pb(y4.x3(), i + 8, 4) | pb(y5.x3(), i + 8, 5) | pb(y6.x3(), i + 8, 6) | pb(y7.x3(), i + 8, 7)) as u8;
-    }
-
-
-    for i in range(0u, 8) {
-        output[i * 16 + 8] = (
-            pb(y0.x0(), i + 16, 0) | pb(y1.x0(), i + 16, 1) | pb(y2.x0(), i + 16, 2) | pb(y3.x0(), i + 16, 3) |
-            pb(y4.x0(), i + 16, 4) | pb(y5.x0(), i + 16, 5) | pb(y6.x0(), i + 16, 6) | pb(y7.x0(), i + 16, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 9] = (
-            pb(y0.x1(), i + 16, 0) | pb(y1.x1(), i + 16, 1) | pb(y2.x1(), i + 16, 2) | pb(y3.x1(), i + 16, 3) |
-            pb(y4.x1(), i + 16, 4) | pb(y5.x1(), i + 16, 5) | pb(y6.x1(), i + 16, 6) | pb(y7.x1(), i + 16, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 10] = (
-            pb(y0.x2(), i + 16, 0) | pb(y1.x2(), i + 16, 1) | pb(y2.x2(), i + 16, 2) | pb(y3.x2(), i + 16, 3) |
-            pb(y4.x2(), i + 16, 4) | pb(y5.x2(), i + 16, 5) | pb(y6.x2(), i + 16, 6) | pb(y7.x2(), i + 16, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 11] = (
-            pb(y0.x3(), i + 16, 0) | pb(y1.x3(), i + 16, 1) | pb(y2.x3(), i + 16, 2) | pb(y3.x3(), i + 16, 3) |
-            pb(y4.x3(), i + 16, 4) | pb(y5.x3(), i + 16, 5) | pb(y6.x3(), i + 16, 6) | pb(y7.x3(), i + 16, 7)) as u8;
-    }
-
-    for i in range(0u, 8) {
-        output[i * 16 + 12] = (
-            pb(y0.x0(), i + 24, 0) | pb(y1.x0(), i + 24, 1) | pb(y2.x0(), i + 24, 2) | pb(y3.x0(), i + 24, 3) |
-            pb(y4.x0(), i + 24, 4) | pb(y5.x0(), i + 24, 5) | pb(y6.x0(), i + 24, 6) | pb(y7.x0(), i + 24, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 13] = (
-            pb(y0.x1(), i + 24, 0) | pb(y1.x1(), i + 24, 1) | pb(y2.x1(), i + 24, 2) | pb(y3.x1(), i + 24, 3) |
-            pb(y4.x1(), i + 24, 4) | pb(y5.x1(), i + 24, 5) | pb(y6.x1(), i + 24, 6) | pb(y7.x1(), i + 24, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 14] = (
-            pb(y0.x2(), i + 24, 0) | pb(y1.x2(), i + 24, 1) | pb(y2.x2(), i + 24, 2) | pb(y3.x2(), i + 24, 3) |
-            pb(y4.x2(), i + 24, 4) | pb(y5.x2(), i + 24, 5) | pb(y6.x2(), i + 24, 6) | pb(y7.x2(), i + 24, 7)) as u8;
-    }
-    for i in range(0u, 8) {
-        output[i * 16 + 15] = (
-            pb(y0.x3(), i + 24, 0) | pb(y1.x3(), i + 24, 1) | pb(y2.x3(), i + 24, 2) | pb(y3.x3(), i + 24, 3) |
-            pb(y4.x3(), i + 24, 4) | pb(y5.x3(), i + 24, 5) | pb(y6.x3(), i + 24, 6) | pb(y7.x3(), i + 24, 7)) as u8;
-    }
+    write_row_major(&x0, output.mut_slice(0, 16));
+    write_row_major(&x1, output.mut_slice(16, 32));
+    write_row_major(&x2, output.mut_slice(32, 48));
+    write_row_major(&x3, output.mut_slice(48, 64));
+    write_row_major(&x4, output.mut_slice(64, 80));
+    write_row_major(&x5, output.mut_slice(80, 96));
+    write_row_major(&x6, output.mut_slice(96, 112));
+    write_row_major(&x7, output.mut_slice(112, 128))
 }
-
-impl <T: Eq> Eq for Bs8State<T> {
-    fn eq(&self, rhs: &Bs8State<T>) -> bool {
-        let Bs8State(ref a0, ref a1, ref a2, ref a3, ref a4, ref a5, ref a6, ref a7) = *self;
-        let Bs8State(ref b0, ref b1, ref b2, ref b3, ref b4, ref b5, ref b6, ref b7) = *rhs;
-        return *a0 == *b0 && *a1 == *b1 && *a2 == *b2 && *a3 == *b3 && *a4 == *b4 && *a5 == *b5 && *a6 == *b6 && *a7 == *b7;
-    }
-}
-
-#[test]
-fn bigtest() {
-    let mut  input = [0u8, ..128];
-    for i in range(0, 128) {
-        input[i] = i as u8;
-    }
-//     let a = bit_splice_1x128_with_int128(input);
-//     let b = bit_splice_1x128_with_int128(input);
-//
-//     assert!(a == a);
-//     assert!(b == b);
-//     assert!(a == b);
-
-//     let mut output = [0u8, ..128];
-//     un_bit_splice_1x128_with_int128(&a, output);
-//     let Bs8State(_, _, t, _, _, _, _, _) = a;
-//     printfln!("t     : %x", t.x0 as uint);
-//     printfln!("t     : %x", t.x1 as uint);
-//     printfln!("t     : %x", t.x2 as uint);
-//     printfln!("t     : %x", t.x3 as uint);
-//     printfln!("input : %?", input);
-//     printfln!("output: %?", output);
-//     assert!(input == output);
-
-}
-
