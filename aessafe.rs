@@ -981,6 +981,22 @@ impl u32x4 {
         let u32x4(_, _, _, a3) = *self;
         return a3;
     }
+    fn lsh(&self, s: uint) -> u32x4 {
+        let u32x4(a0, a1, a2, a3) = *self;
+        return u32x4(
+            a0 << s,
+            (a1 << s) | (a0 >> (32 - s)),
+            (a2 << s) | (a1 >> (32 - s)),
+            (a3 << s) | (a2 >> (32 - s)));
+    }
+    fn rsh(&self, s: uint) -> u32x4 {
+        let u32x4(a0, a1, a2, a3) = *self;
+        return u32x4(
+            (a0 >> s) | (a1 << (32 -s)),
+            (a1 >> s) | (a2 << (32 -s)),
+            (a2 >> s) | (a3 << (32 -s)),
+            a3 >> s);
+    }
 }
 
 impl BitXor<u32x4, u32x4> for u32x4 {
@@ -1079,39 +1095,60 @@ static s2x_int128: [[u32x4, ..8], ..8] = [
 ];
 
 fn bit_splice_1x128_with_int128(data: &[u8]) -> Bs8State<u32x4> {
-    fn construct_word(data: &[u8], byte: uint, bit: uint) -> u32 {
-        let mut tmp: u32 = 0;
-        for i in range(0u, 8) {
-            tmp |= pb(data[i * 16 + byte] as u32, bit, i);
-        }
-        for i in range(0u, 8) {
-            tmp |= pb(data[i * 16 + byte + 4] as u32, bit, i + 8);
-        }
-        for i in range(0u, 8) {
-            tmp |= pb(data[i * 16 + byte + 8] as u32, bit, i + 16);
-        }
-        for i in range(0u, 8) {
-            tmp |= pb(data[i * 16 + byte + 12] as u32, bit, i + 24);
-        }
-        return tmp;
+    fn read_row_major(data: &[u8]) -> u32x4 {
+        return u32x4(
+            (data[0] as u32) |
+            ((data[4] as u32) << 8) |
+            ((data[8] as u32) << 16) |
+            ((data[12] as u32) << 24),
+            (data[1] as u32) |
+            ((data[5] as u32) << 8) |
+            ((data[9] as u32) << 16) |
+            ((data[13] as u32) << 24),
+            (data[2] as u32) |
+            ((data[6] as u32) << 8) |
+            ((data[10] as u32) << 16) |
+            ((data[14] as u32) << 24),
+            (data[3] as u32) |
+            ((data[7] as u32) << 8) |
+            ((data[11] as u32) << 16) |
+            ((data[15] as u32) << 24));
     }
 
-    fn construct_int128(data: &[u8], bit: uint) -> u32x4 {
-        let x0 = construct_word(data, 0, bit);
-        let x1 = construct_word(data, 1, bit);
-        let x2 = construct_word(data, 2, bit);
-        let x3 = construct_word(data, 3, bit);
-        return u32x4(x0, x1, x2, x3);
-    }
+    let bit0 = u32x4(0x01010101, 0x01010101, 0x01010101, 0x01010101);
+    let bit1 = u32x4(0x02020202, 0x02020202, 0x02020202, 0x02020202);
+    let bit2 = u32x4(0x04040404, 0x04040404, 0x04040404, 0x04040404);
+    let bit3 = u32x4(0x08080808, 0x08080808, 0x08080808, 0x08080808);
+    let bit4 = u32x4(0x10101010, 0x10101010, 0x10101010, 0x10101010);
+    let bit5 = u32x4(0x20202020, 0x20202020, 0x20202020, 0x20202020);
+    let bit6 = u32x4(0x40404040, 0x40404040, 0x40404040, 0x40404040);
+    let bit7 = u32x4(0x80808080, 0x80808080, 0x80808080, 0x80808080);
 
-    let x0 = construct_int128(data, 0);
-    let x1 = construct_int128(data, 1);
-    let x2 = construct_int128(data, 2);
-    let x3 = construct_int128(data, 3);
-    let x4 = construct_int128(data, 4);
-    let x5 = construct_int128(data, 5);
-    let x6 = construct_int128(data, 6);
-    let x7 = construct_int128(data, 7);
+    let t0 = read_row_major(data.slice(0, 16));
+    let t1 = read_row_major(data.slice(16, 32));
+    let t2 = read_row_major(data.slice(32, 48));
+    let t3 = read_row_major(data.slice(48, 64));
+    let t4 = read_row_major(data.slice(64, 80));
+    let t5 = read_row_major(data.slice(80, 96));
+    let t6 = read_row_major(data.slice(96, 112));
+    let t7 = read_row_major(data.slice(112, 128));
+
+    let x0 = ((t0) & bit0) | ((t1.lsh(1)) & bit1) | ((t2.lsh(2)) & bit2) | ((t3.lsh(3)) & bit3) |
+        ((t4.lsh(4)) & bit4) | ((t5.lsh(5)) & bit5) | ((t6.lsh(6)) & bit6) | ((t7.lsh(7)) & bit7);
+    let x1 = ((t0.rsh(1)) & bit0) | ((t1) & bit1) | ((t2.lsh(1)) & bit2) | ((t3.lsh(2)) & bit3) |
+        ((t4.lsh(3)) & bit4) | ((t5.lsh(4)) & bit5) | ((t6.lsh(5)) & bit6) | ((t7.lsh(6)) & bit7);
+    let x2 = ((t0.rsh(2)) & bit0) | ((t1.rsh(1)) & bit1) | ((t2) & bit2) | ((t3.lsh(1)) & bit3) |
+        ((t4.lsh(2)) & bit4) | ((t5.lsh(3)) & bit5) | ((t6.lsh(4)) & bit6) | ((t7.lsh(5)) & bit7);
+    let x3 = ((t0.rsh(3)) & bit0) | ((t1.rsh(2)) & bit1) | ((t2.rsh(1)) & bit2) | ((t3) & bit3) |
+        ((t4.lsh(1)) & bit4) | ((t5.lsh(2)) & bit5) | ((t6.lsh(3)) & bit6) | ((t7.lsh(4)) & bit7);
+    let x4 = ((t0.rsh(4)) & bit0) | ((t1.rsh(3)) & bit1) | ((t2.rsh(2)) & bit2) | ((t3.rsh(1)) & bit3) |
+        ((t4) & bit4) | ((t5.lsh(1)) & bit5) | ((t6.lsh(2)) & bit6) | ((t7.lsh(3)) & bit7);
+    let x5 = ((t0.rsh(5)) & bit0) | ((t1.rsh(4)) & bit1) | ((t2.rsh(3)) & bit2) | ((t3.rsh(2)) & bit3) |
+        ((t4.rsh(1)) & bit4) | ((t5) & bit5) | ((t6.lsh(1)) & bit6) | ((t7.lsh(2)) & bit7);
+    let x6 = ((t0.rsh(6)) & bit0) | ((t1.rsh(5)) & bit1) | ((t2.rsh(4)) & bit2) | ((t3.rsh(3)) & bit3) |
+        ((t4.rsh(2)) & bit4) | ((t5.rsh(1)) & bit5) | ((t6) & bit6) | ((t7.lsh(1)) & bit7);
+    let x7 = ((t0.rsh(7)) & bit0) | ((t1.rsh(6)) & bit1) | ((t2.rsh(5)) & bit2) | ((t3.rsh(4)) & bit3) |
+        ((t4.rsh(3)) & bit4) | ((t5.rsh(2)) & bit5) | ((t6.rsh(1)) & bit6) | ((t7) & bit7);
 
     return Bs8State(x0, x1, x2, x3, x4, x5, x6, x7);
 }
@@ -1215,3 +1252,38 @@ fn un_bit_splice_1x128_with_int128(bs: &Bs8State<u32x4>, output: &mut [u8]) {
             pb(y4.x3(), i + 24, 4) | pb(y5.x3(), i + 24, 5) | pb(y6.x3(), i + 24, 6) | pb(y7.x3(), i + 24, 7)) as u8;
     }
 }
+
+impl <T: Eq> Eq for Bs8State<T> {
+    fn eq(&self, rhs: &Bs8State<T>) -> bool {
+        let Bs8State(ref a0, ref a1, ref a2, ref a3, ref a4, ref a5, ref a6, ref a7) = *self;
+        let Bs8State(ref b0, ref b1, ref b2, ref b3, ref b4, ref b5, ref b6, ref b7) = *rhs;
+        return *a0 == *b0 && *a1 == *b1 && *a2 == *b2 && *a3 == *b3 && *a4 == *b4 && *a5 == *b5 && *a6 == *b6 && *a7 == *b7;
+    }
+}
+
+#[test]
+fn bigtest() {
+    let mut  input = [0u8, ..128];
+    for i in range(0, 128) {
+        input[i] = i as u8;
+    }
+//     let a = bit_splice_1x128_with_int128(input);
+//     let b = bit_splice_1x128_with_int128(input);
+//
+//     assert!(a == a);
+//     assert!(b == b);
+//     assert!(a == b);
+
+//     let mut output = [0u8, ..128];
+//     un_bit_splice_1x128_with_int128(&a, output);
+//     let Bs8State(_, _, t, _, _, _, _, _) = a;
+//     printfln!("t     : %x", t.x0 as uint);
+//     printfln!("t     : %x", t.x1 as uint);
+//     printfln!("t     : %x", t.x2 as uint);
+//     printfln!("t     : %x", t.x3 as uint);
+//     printfln!("input : %?", input);
+//     printfln!("output: %?", output);
+//     assert!(input == output);
+
+}
+
