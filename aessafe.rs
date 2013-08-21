@@ -14,6 +14,7 @@ use std::uint;
 use cryptoutil::*;
 use symmetriccipher::*;
 
+
 #[simd]
 #[deriving(Clone, Eq)]
 pub struct u32x4(u32, u32, u32, u32);
@@ -22,52 +23,6 @@ pub struct u32x4(u32, u32, u32, u32);
 macro_rules! o( () => ( u32x4(0, 0, 0, 0) ) )
 macro_rules! x( () => ( u32x4(-1, -1, -1, -1) ) )
 
-
-struct AesSafe128EncryptorX8 {
-    sk: [Bs8State<u32x4>, ..11]
-}
-
-impl AesSafe128EncryptorX8 {
-    pub fn new(key: &[u8]) -> AesSafe128EncryptorX8 {
-        let mut a =  AesSafe128EncryptorX8 {
-            sk: [Bs8State(o!(), o!(), o!(), o!(), o!(), o!(), o!(), o!()), ..11]
-        };
-        let mut tmp = [[0u32, ..4], ..11];
-        setup_round_keys_int128(key, Encryption, tmp, a.sk);
-        return a;
-    }
-}
-
-impl BlockEncryptor for AesSafe128EncryptorX8 {
-    fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
-        let bs = bit_splice_1x128_with_int128(input);
-        let bs2 = encrypt_core(&bs, self.sk);
-        un_bit_splice_1x128_with_int128(&bs2, output);
-    }
-}
-
-struct AesSafe128DecryptorX8 {
-    sk: [Bs8State<u32x4>, ..11]
-}
-
-impl AesSafe128DecryptorX8 {
-    pub fn new(key: &[u8]) -> AesSafe128DecryptorX8 {
-        let mut a =  AesSafe128DecryptorX8 {
-            sk: [Bs8State(o!(), o!(), o!(), o!(), o!(), o!(), o!(), o!()), ..11]
-        };
-        let mut tmp = [[0u32, ..4], ..11];
-        setup_round_keys_int128(key, Decryption, tmp, a.sk);
-        return a;
-    }
-}
-
-impl BlockDecryptor for AesSafe128DecryptorX8 {
-    fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
-        let bs = bit_splice_1x128_with_int128(input);
-        let bs2 = decrypt_core(&bs, self.sk);
-        un_bit_splice_1x128_with_int128(&bs2, output);
-    }
-}
 
 macro_rules! define_aes_struct(
     (
@@ -90,10 +45,13 @@ macro_rules! define_aes_impl(
         impl $name {
             pub fn new(key: &[u8]) -> $name {
                 let mut a =  $name {
-                    sk: [Bs8State(0,0,0,0,0,0,0,0), ..$rounds + 1]
+                    sk: [Bs8State(0, 0, 0, 0, 0, 0, 0, 0), ..$rounds + 1]
                 };
                 let mut tmp = [[0u32, ..4], ..$rounds + 1];
-                setup_round_keys(key, $mode, tmp, a.sk);
+                create_round_keys(key, $mode, tmp);
+                for i in range(0, $rounds + 1) {
+                    a.sk[i] = bit_splice_4x4_with_u32(tmp[i][0], tmp[i][1], tmp[i][2], tmp[i][3]);
+                }
                 return a;
             }
         }
@@ -107,7 +65,9 @@ macro_rules! define_aes_enc(
     ) => (
         impl BlockEncryptor for $name {
             fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
-                encrypt_block($rounds, input, self.sk, output);
+                let mut bs = bit_splice_1x16_with_u32(input);
+                bs = encrypt_core(&bs, self.sk);
+                un_bit_splice_1x16_with_u32(&bs, output);
             }
         }
     )
@@ -120,7 +80,9 @@ macro_rules! define_aes_dec(
     ) => (
         impl BlockDecryptor for $name {
             fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
-                decrypt_block($rounds, input, self.sk, output);
+                let mut bs = bit_splice_1x16_with_u32(input);
+                bs = decrypt_core(&bs, self.sk);
+                un_bit_splice_1x16_with_u32(&bs, output);
             }
         }
     )
@@ -148,26 +110,114 @@ define_aes_enc!(AesSafe256Encryptor, 14)
 define_aes_dec!(AesSafe256Decryptor, 14)
 
 
-fn shift(r: u32, shift: u32) -> u32 {
-    return (r >> shift) | (r << (32 - shift));
+macro_rules! define_aes_struct_x8(
+    (
+        $name:ident,
+        $rounds:expr
+    ) => (
+        struct $name {
+            sk: [Bs8State<u32x4>, ..$rounds + 1]
+        }
+    )
+)
+
+macro_rules! define_aes_impl_x8(
+    (
+        $name:ident,
+        $mode:ident,
+        $rounds:expr,
+        $key_size:expr
+    ) => (
+        impl $name {
+            pub fn new(key: &[u8]) -> $name {
+                let mut a =  $name {
+                    sk: [Bs8State(o!(), o!(), o!(), o!(), o!(), o!(), o!(), o!()), ..$rounds + 1]
+                };
+                let mut tmp = [[0u32, ..4], ..$rounds + 1];
+                create_round_keys(key, $mode, tmp);
+                for i in range(0, $rounds + 1) {
+                    a.sk[i] = bit_splice_fill_4x4_with_int128(
+                        tmp[i][0],
+                        tmp[i][1],
+                        tmp[i][2],
+                        tmp[i][3]);
+                }
+                return a;
+            }
+        }
+    )
+)
+
+macro_rules! define_aes_enc_x8(
+    (
+        $name:ident,
+        $rounds:expr
+    ) => (
+        impl BlockEncryptor for $name {
+            fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
+                let bs = bit_splice_1x128_with_int128(input);
+                let bs2 = encrypt_core(&bs, self.sk);
+                un_bit_splice_1x128_with_int128(&bs2, output);
+            }
+        }
+    )
+)
+
+macro_rules! define_aes_dec_x8(
+    (
+        $name:ident,
+        $rounds:expr
+    ) => (
+        impl BlockDecryptor for $name {
+            fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
+                let bs = bit_splice_1x128_with_int128(input);
+                let bs2 = decrypt_core(&bs, self.sk);
+                un_bit_splice_1x128_with_int128(&bs2, output);
+            }
+        }
+    )
+)
+
+define_aes_struct_x8!(AesSafe128EncryptorX8, 10)
+define_aes_struct_x8!(AesSafe128DecryptorX8, 10)
+define_aes_impl_x8!(AesSafe128EncryptorX8, Encryption, 10, 16)
+define_aes_impl_x8!(AesSafe128DecryptorX8, Decryption, 10, 16)
+define_aes_enc_x8!(AesSafe128EncryptorX8, 10)
+define_aes_dec_x8!(AesSafe128DecryptorX8, 10)
+
+define_aes_struct_x8!(AesSafe192EncryptorX8, 12)
+define_aes_struct_x8!(AesSafe192DecryptorX8, 12)
+define_aes_impl_x8!(AesSafe192EncryptorX8, Encryption, 12, 24)
+define_aes_impl_x8!(AesSafe192DecryptorX8, Decryption, 12, 24)
+define_aes_enc_x8!(AesSafe192EncryptorX8, 12)
+define_aes_dec_x8!(AesSafe192DecryptorX8, 12)
+
+define_aes_struct_x8!(AesSafe256EncryptorX8, 14)
+define_aes_struct_x8!(AesSafe256DecryptorX8, 14)
+define_aes_impl_x8!(AesSafe256EncryptorX8, Encryption, 14, 32)
+define_aes_impl_x8!(AesSafe256DecryptorX8, Decryption, 14, 32)
+define_aes_enc_x8!(AesSafe256EncryptorX8, 14)
+define_aes_dec_x8!(AesSafe256DecryptorX8, 14)
+
+
+fn rotate(r: u32, rotate: u32) -> u32 {
+    return (r >> rotate) | (r << (32 - rotate));
 }
 
 fn ffmulx(x: u32) -> u32 {
-    static m1: u32 = 0x80808080;
-    static m2: u32 = 0x7f7f7f7f;
-    static m3: u32 = 0x0000001b;
-
+    let m1: u32 = 0x80808080;
+    let m2: u32 = 0x7f7f7f7f;
+    let m3: u32 = 0x0000001b;
     return ((x & m2) << 1) ^ (((x & m1) >> 7) * m3);
 }
 
-// The inverse mix columns step
 fn inv_mcol(x: u32) -> u32 {
     let f2 = ffmulx(x);
     let f4 = ffmulx(f2);
     let f8 = ffmulx(f4);
     let f9 = x ^ f8;
 
-    return f2 ^ f4 ^ f8 ^ shift(f2 ^ f9, 8) ^ shift(f4 ^ f9, 16) ^ shift(f9, 24);
+    return f2 ^ f4 ^ f8 ^ rotate(f2 ^ f9, 8) ^ rotate(f4 ^ f9, 16) ^ rotate(f9, 24);
 }
 
 fn sub_word(x: u32) -> u32 {
@@ -182,7 +232,7 @@ enum KeyType {
 
 static RCON: [u32, ..10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
 
-fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]], sk: &mut [Bs8State<u32>]) {
+fn create_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]) {
     let (key_words, rounds) = match key.len() {
         16 => (4, 10u),
         24 => (6, 12u),
@@ -190,7 +240,7 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
         _ => fail!("Invalid AES key size.")
     };
 
-    // They key becomes the first few round keys - just copy it directly
+    // The key is copied directly into the first few round keys
     let mut j = 0;
     do uint::range_step(0, key.len(), 4) |i| {
         round_keys[j / 4][j % 4] =
@@ -204,14 +254,14 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
 
     // Calculate the rest of the round keys
     for i in range(key_words, (rounds + 1) * 4) {
-        let mut temp = round_keys[(i - 1) / 4][(i - 1) % 4];
+        let mut tmp = round_keys[(i - 1) / 4][(i - 1) % 4];
         if (i % key_words) == 0 {
-            temp = sub_word(shift(temp, 8)) ^ RCON[(i / key_words) - 1];
+            tmp = sub_word(rotate(tmp, 8)) ^ RCON[(i / key_words) - 1];
         } else if (key_words == 8) && ((i % key_words) == 4) {
             // This is only necessary for AES-256 keys
-            temp = sub_word(temp);
+            tmp = sub_word(tmp);
         }
-        round_keys[i / 4][i % 4] = round_keys[(i - key_words) / 4][(i - key_words) % 4] ^ temp;
+        round_keys[i / 4][i % 4] = round_keys[(i - key_words) / 4][(i - key_words) % 4] ^ tmp;
     }
 
     // Decryption round keys require extra processing
@@ -225,122 +275,8 @@ fn setup_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]
         },
         Encryption => { }
     }
-
-    for i in range(0, rounds + 1) {
-        sk[i] = bit_splice_4x4_with_u32(
-            round_keys[i][0],
-            round_keys[i][1],
-            round_keys[i][2],
-            round_keys[i][3])
-    }
 }
 
-// TODO - Merge this somehow?
-fn setup_round_keys_int128(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]], sk: &mut [Bs8State<u32x4>]) {
-    let (key_words, rounds) = match key.len() {
-        16 => (4, 10u),
-        24 => (6, 12u),
-        32 => (8, 14u),
-        _ => fail!("Invalid AES key size.")
-    };
-
-    // They key becomes the first few round keys - just copy it directly
-    let mut j = 0;
-    do uint::range_step(0, key.len(), 4) |i| {
-        round_keys[j / 4][j % 4] =
-            (key[i] as u32) |
-            ((key[i+1] as u32) << 8) |
-            ((key[i+2] as u32) << 16) |
-            ((key[i+3] as u32) << 24);
-        j += 1;
-        true
-    };
-
-    // Calculate the rest of the round keys
-    for i in range(key_words, (rounds + 1) * 4) {
-        let mut temp = round_keys[(i - 1) / 4][(i - 1) % 4];
-        if (i % key_words) == 0 {
-            temp = sub_word(shift(temp, 8)) ^ RCON[(i / key_words) - 1];
-        } else if (key_words == 8) && ((i % key_words) == 4) {
-            // This is only necessary for AES-256 keys
-            temp = sub_word(temp);
-        }
-        round_keys[i / 4][i % 4] = round_keys[(i - key_words) / 4][(i - key_words) % 4] ^ temp;
-    }
-
-    // Decryption round keys require extra processing
-    match key_type {
-        Decryption => {
-            for j in range(1, rounds) {
-                for i in range(0, 4) {
-                    round_keys[j][i] = inv_mcol(round_keys[j][i]);
-                }
-            }
-        },
-        Encryption => { }
-    }
-
-    for i in range(0, rounds + 1) {
-        sk[i] = bit_splice_fill_4x4_with_int128(
-            round_keys[i][0],
-            round_keys[i][1],
-            round_keys[i][2],
-            round_keys[i][3])
-    }
-}
-
-
-trait AesRowTypeOps: BitXor<Self, Self> + BitAnd<Self, Self> + Clone + Zero {
-    fn a2x() -> &'static [[Self, ..8], ..8];
-    fn x2s() -> &'static [[Self, ..8], ..8];
-    fn s2x() -> &'static [[Self, ..8], ..8];
-    fn x2a() -> &'static [[Self, ..8], ..8];
-    fn x63() -> Bs8State<Self>;
-
-    fn shift_row(&self) -> Self;
-    fn inv_shift_row(&self) -> Self;
-    fn ror1(&self) -> Self;
-    fn ror2(&self) -> Self;
-    fn ror3(&self) -> Self;
-}
-
-impl AesRowTypeOps for u32 {
-    fn a2x() -> &'static [[u32, ..8], ..8] { &A2X_u32 }
-    fn x2s() -> &'static [[u32, ..8], ..8] { &X2S_u32 }
-    fn s2x() -> &'static [[u32, ..8], ..8] { &S2X_u32 }
-    fn x2a() -> &'static [[u32, ..8], ..8] { &X2A_u32 }
-    fn x63() -> Bs8State<u32> { Bs8State(-1, -1, 0, 0, 0, -1, -1, 0) }
-
-    fn shift_row(&self) -> u32 {
-        // first 4 bits represent first row - don't shift
-        (*self & 0x000f) |
-        // next 4 bits represent 2nd row - left rotate 1 bit
-        ((*self & 0x00e0) >> 1) | ((*self & 0x0010) << 3) |
-        // next 4 bits represent 3rd row - left rotate 2 bits
-        ((*self & 0x0c00) >> 2) | ((*self & 0x0300) << 2) |
-        // next 4 bits represent 4th row - left rotate 3 bits
-        ((*self & 0x8000) >> 3) | ((*self & 0x7000) << 1)
-    }
-    fn inv_shift_row(&self) -> u32 {
-        // first 4 bits represent first row - don't shift
-        (*self & 0x000f) |
-        // next 4 bits represent 2nd row - right rotate 1 bit
-        ((*self & 0x0080) >> 3) | ((*self & 0x0070) << 1) |
-        // next 4 bits represent 3rd row - right rotate 2 bits
-        ((*self & 0x0c00) >> 2) | ((*self & 0x0300) << 2) |
-        // next 4 bits represent 4th row - right rotate 3 bits
-        ((*self & 0xe000) >> 1) | ((*self & 0x1000) << 3)
-    }
-    fn ror1(&self) -> u32 {
-        ((*self >> 4) & 0x0fff) | (*self << 12)
-    }
-    fn ror2(&self) -> u32 {
-        ((*self >> 8) & 0x00ff) | (*self << 8)
-    }
-    fn ror3(&self) -> u32 {
-        ((*self >> 12) & 0x000f) | (*self << 4)
-    }
-}
 
 trait AesOps {
     fn sub_bytes(&self) -> Self;
@@ -352,104 +288,6 @@ trait AesOps {
     fn add_round_key(&self, rk: &Self) -> Self;
 }
 
-impl <T: AesRowTypeOps> AesOps for Bs8State<T> {
-    // find Sbox of n in GF(2^8) mod POLY
-    fn sub_bytes(&self) -> Bs8State<T> {
-        let nb = self.change_basis(AesRowTypeOps::a2x::<T>());
-        let inv = nb.inv();
-        let nb2 = inv.change_basis(AesRowTypeOps::x2s::<T>());
-        let x63 = AesRowTypeOps::x63::<T>();
-        return nb2.xor(&x63);
-    }
-    // find inverse Sbox of n in GF(2^8) mod POLY
-    fn inv_sub_bytes(&self) -> Bs8State<T> {
-        let x63 = AesRowTypeOps::x63::<T>();
-        let t = self.xor(&x63);
-        let nb = t.change_basis(AesRowTypeOps::s2x::<T>());
-        let inv = nb.inv();
-        let nb2 = inv.change_basis(AesRowTypeOps::x2a::<T>());
-        return nb2;
-    }
-    fn shift_rows(&self) -> Bs8State<T> {
-        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
-        return Bs8State(
-            x0.shift_row(),
-            x1.shift_row(),
-            x2.shift_row(),
-            x3.shift_row(),
-            x4.shift_row(),
-            x5.shift_row(),
-            x6.shift_row(),
-            x7.shift_row());
-    }
-    fn inv_shift_rows(&self) -> Bs8State<T> {
-        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
-        return Bs8State(
-            x0.inv_shift_row(),
-            x1.inv_shift_row(),
-            x2.inv_shift_row(),
-            x3.inv_shift_row(),
-            x4.inv_shift_row(),
-            x5.inv_shift_row(),
-            x6.inv_shift_row(),
-            x7.inv_shift_row());
-    }
-    fn mix_columns(&self) -> Bs8State<T> {
-        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
-
-        let x0out = x7 ^ x7.ror1() ^ x0.ror1() ^ (x0 ^ x0.ror1()).ror2();
-        let x1out = x0 ^ x0.ror1() ^ *x7 ^ x7.ror1() ^ x1.ror1() ^ (x1 ^ x1.ror1()).ror2();
-        let x2out = x1 ^ x1.ror1() ^ x2.ror1() ^ (x2 ^ x2.ror1()).ror2();
-        let x3out = x2 ^ x2.ror1() ^ *x7 ^ x7.ror1() ^ x3.ror1() ^ (x3 ^ x3.ror1()).ror2();
-        let x4out = x3 ^ x3.ror1() ^ *x7 ^ x7.ror1() ^ x4.ror1() ^ (x4 ^ x4.ror1()).ror2();
-        let x5out = x4 ^ x4.ror1() ^ x5.ror1() ^ (x5 ^ x5.ror1()).ror2();
-        let x6out = x5 ^ x5.ror1() ^ x6.ror1() ^ (x6 ^ x6.ror1()).ror2();
-        let x7out = x6 ^ x6.ror1() ^ x7.ror1() ^ (x7 ^ x7.ror1()).ror2();
-
-        return Bs8State(x0out, x1out, x2out, x3out, x4out, x5out, x6out, x7out);
-    }
-    fn inv_mix_columns(&self) -> Bs8State<T> {
-        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
-
-        let x0out = *x5 ^ *x6 ^ *x7 ^
-            x5.ror1() ^ x7.ror1() ^ x0.ror1() ^
-            x0.ror2() ^ x5.ror2() ^ x6.ror2() ^
-            x5.ror3() ^ x0.ror3();
-        let x1out = *x5 ^ *x0 ^
-            x6.ror1() ^ x5.ror1() ^ x0.ror1() ^ x7.ror1() ^ x1.ror1() ^
-            x1.ror2() ^ x7.ror2() ^ x5.ror2() ^
-            x6.ror3() ^ x5.ror3() ^ x1.ror3();
-        let x2out = *x6 ^ *x0 ^ *x1 ^
-            x7.ror1() ^ x6.ror1() ^ x1.ror1() ^ x2.ror1() ^
-            x0.ror2() ^ x2.ror2() ^ x6.ror2() ^
-            x7.ror3() ^ x6.ror3() ^ x2.ror3();
-        let x3out = *x0 ^ *x5 ^ *x1 ^ *x6 ^ *x2 ^
-            x0.ror1() ^ x5.ror1() ^ x2.ror1() ^ x3.ror1() ^
-            x0.ror2() ^ x1.ror2() ^ x3.ror2() ^ x5.ror2() ^ x6.ror2() ^ x7.ror2() ^
-            x0.ror3() ^ x5.ror3() ^ x7.ror3() ^ x3.ror3();
-        let x4out = *x1 ^ *x5 ^ *x2 ^ *x3 ^
-            x1.ror1() ^ x6.ror1() ^ x5.ror1() ^ x3.ror1() ^ x7.ror1() ^ x4.ror1() ^
-            x1.ror2() ^ x2.ror2() ^ x4.ror2() ^ x5.ror2() ^ x7.ror2() ^
-            x1.ror3() ^ x5.ror3() ^ x6.ror3() ^ x4.ror3();
-        let x5out = *x2 ^ *x6 ^ *x3 ^ *x4 ^
-            x2.ror1() ^ x7.ror1() ^ x6.ror1() ^ x4.ror1() ^ x5.ror1() ^
-            x2.ror2() ^ x3.ror2() ^ x5.ror2() ^ x6.ror2() ^
-            x2.ror3() ^ x6.ror3() ^ x7.ror3() ^ x5.ror3();
-        let x6out =  *x3 ^ *x7 ^ *x4 ^ *x5 ^
-            x3.ror1() ^ x7.ror1() ^ x5.ror1() ^ x6.ror1() ^
-            x3.ror2() ^ x4.ror2() ^ x6.ror2() ^ x7.ror2() ^
-            x3.ror3() ^ x7.ror3() ^ x6.ror3();
-        let x7out = *x4 ^ *x5 ^ *x6 ^
-            x4.ror1() ^ x6.ror1() ^ x7.ror1() ^
-            x4.ror2() ^ x5.ror2() ^ x7.ror2() ^
-            x4.ror3() ^ x7.ror3();
-
-        Bs8State(x0out, x1out, x2out, x3out, x4out, x5out, x6out, x7out)
-    }
-    fn add_round_key(&self, rk: &Bs8State<T>) -> Bs8State<T> {
-        return self.xor(rk);
-    }
-}
 
 fn encrypt_core<S: AesOps>(state: &S, sk: &[S]) -> S {
     // Round 0 - add round key
@@ -471,12 +309,6 @@ fn encrypt_core<S: AesOps>(state: &S, sk: &[S]) -> S {
     return tmp;
 }
 
-fn encrypt_block(rounds: uint, input: &[u8], sk: &[Bs8State<u32>], output: &mut [u8]) {
-    let mut bs = bit_splice_1x16_with_u32(input);
-    bs = encrypt_core(&bs, sk);
-    un_bit_splice_1x16_with_u32(&bs, output);
-}
-
 fn decrypt_core<S: AesOps>(state: &S, sk: &[S]) -> S {
     // Round 0 - add round key
     let mut tmp = state.add_round_key(&sk[sk.len() - 1]);
@@ -496,30 +328,6 @@ fn decrypt_core<S: AesOps>(state: &S, sk: &[S]) -> S {
 
     return tmp;
 }
-
-fn decrypt_block(rounds: uint, input: &[u8], sk: &[Bs8State<u32>], output: &mut [u8]) {
-    let mut bs = bit_splice_1x16_with_u32(input);
-    bs = decrypt_core(&bs, sk);
-    un_bit_splice_1x16_with_u32(&bs, output);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 struct Bs8State<T>(T, T, T, T, T, T, T, T);
@@ -549,6 +357,7 @@ impl <T: Clone> Bs4State<T> {
         let Bs4State(ref x0, ref x1, ref x2, ref x3) = *self;
         return (Bs2State(x0.clone(), x1.clone()), Bs2State(x2.clone(), x3.clone()));
     }
+
     fn join(&self, rhs: &Bs4State<T>) -> Bs8State<T> {
         let Bs4State(ref a0, ref a1, ref a2, ref a3) = *self;
         let Bs4State(ref b0, ref b1, ref b2, ref b3) = *rhs;
@@ -573,6 +382,7 @@ impl <T: Clone> Bs2State<T> {
         let Bs2State(ref x0, ref x1) = *self;
         return (x0.clone(), x1.clone());
     }
+
     fn join(&self, rhs: &Bs2State<T>) -> Bs4State<T> {
         let Bs2State(ref a0, ref a1) = *self;
         let Bs2State(ref b0, ref b1) = *rhs;
@@ -587,18 +397,6 @@ impl <T: BitXor<T, T>> Bs2State<T> {
         return Bs2State(*a0 ^ *b0, *a1 ^ *b1);
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 fn pb(x: u32, bit: uint, shift: uint) -> u32 {
@@ -680,38 +478,136 @@ fn un_bit_splice_1x16_with_u32(bs: &Bs8State<u32>, output: &mut [u8]) {
     write_u32_le(output.mut_slice(12, 16), d);
 }
 
+fn bit_splice_1x128_with_int128(data: &[u8]) -> Bs8State<u32x4> {
+    fn read_row_major(data: &[u8]) -> u32x4 {
+        return u32x4(
+            (data[0] as u32) |
+            ((data[4] as u32) << 8) |
+            ((data[8] as u32) << 16) |
+            ((data[12] as u32) << 24),
+            (data[1] as u32) |
+            ((data[5] as u32) << 8) |
+            ((data[9] as u32) << 16) |
+            ((data[13] as u32) << 24),
+            (data[2] as u32) |
+            ((data[6] as u32) << 8) |
+            ((data[10] as u32) << 16) |
+            ((data[14] as u32) << 24),
+            (data[3] as u32) |
+            ((data[7] as u32) << 8) |
+            ((data[11] as u32) << 16) |
+            ((data[15] as u32) << 24));
+    }
 
+    let bit0 = u32x4(0x01010101, 0x01010101, 0x01010101, 0x01010101);
+    let bit1 = u32x4(0x02020202, 0x02020202, 0x02020202, 0x02020202);
+    let bit2 = u32x4(0x04040404, 0x04040404, 0x04040404, 0x04040404);
+    let bit3 = u32x4(0x08080808, 0x08080808, 0x08080808, 0x08080808);
+    let bit4 = u32x4(0x10101010, 0x10101010, 0x10101010, 0x10101010);
+    let bit5 = u32x4(0x20202020, 0x20202020, 0x20202020, 0x20202020);
+    let bit6 = u32x4(0x40404040, 0x40404040, 0x40404040, 0x40404040);
+    let bit7 = u32x4(0x80808080, 0x80808080, 0x80808080, 0x80808080);
 
+    let t0 = read_row_major(data.slice(0, 16));
+    let t1 = read_row_major(data.slice(16, 32));
+    let t2 = read_row_major(data.slice(32, 48));
+    let t3 = read_row_major(data.slice(48, 64));
+    let t4 = read_row_major(data.slice(64, 80));
+    let t5 = read_row_major(data.slice(80, 96));
+    let t6 = read_row_major(data.slice(96, 112));
+    let t7 = read_row_major(data.slice(112, 128));
 
+    let x0 = (t0 & bit0) | (t1.lsh(1) & bit1) | (t2.lsh(2) & bit2) | (t3.lsh(3) & bit3) |
+        (t4.lsh(4) & bit4) | (t5.lsh(5) & bit5) | (t6.lsh(6) & bit6) | (t7.lsh(7) & bit7);
+    let x1 = (t0.rsh(1) & bit0) | (t1 & bit1) | (t2.lsh(1) & bit2) | (t3.lsh(2) & bit3) |
+        (t4.lsh(3) & bit4) | (t5.lsh(4) & bit5) | (t6.lsh(5) & bit6) | (t7.lsh(6) & bit7);
+    let x2 = (t0.rsh(2) & bit0) | (t1.rsh(1) & bit1) | (t2 & bit2) | (t3.lsh(1) & bit3) |
+        (t4.lsh(2) & bit4) | (t5.lsh(3) & bit5) | (t6.lsh(4) & bit6) | (t7.lsh(5) & bit7);
+    let x3 = (t0.rsh(3) & bit0) | (t1.rsh(2) & bit1) | (t2.rsh(1) & bit2) | (t3 & bit3) |
+        (t4.lsh(1) & bit4) | (t5.lsh(2) & bit5) | (t6.lsh(3) & bit6) | (t7.lsh(4) & bit7);
+    let x4 = (t0.rsh(4) & bit0) | (t1.rsh(3) & bit1) | (t2.rsh(2) & bit2) | (t3.rsh(1) & bit3) |
+        (t4 & bit4) | (t5.lsh(1) & bit5) | (t6.lsh(2) & bit6) | (t7.lsh(3) & bit7);
+    let x5 = (t0.rsh(5) & bit0) | (t1.rsh(4) & bit1) | (t2.rsh(3) & bit2) | (t3.rsh(2) & bit3) |
+        (t4.rsh(1) & bit4) | (t5 & bit5) | (t6.lsh(1) & bit6) | (t7.lsh(2) & bit7);
+    let x6 = (t0.rsh(6) & bit0) | (t1.rsh(5) & bit1) | (t2.rsh(4) & bit2) | (t3.rsh(3) & bit3) |
+        (t4.rsh(2) & bit4) | (t5.rsh(1) & bit5) | (t6 & bit6) | (t7.lsh(1) & bit7);
+    let x7 = (t0.rsh(7) & bit0) | (t1.rsh(6) & bit1) | (t2.rsh(5) & bit2) | (t3.rsh(4) & bit3) |
+        (t4.rsh(3) & bit4) | (t5.rsh(2) & bit5) | (t6.rsh(1) & bit6) | (t7 & bit7);
 
+    return Bs8State(x0, x1, x2, x3, x4, x5, x6, x7);
+}
 
+fn bit_splice_fill_4x4_with_int128(a: u32, b: u32, c: u32, d: u32) -> Bs8State<u32x4> {
+    let mut tmp = [0u8, ..128];
+    for i in range(0u, 8) {
+        write_u32_le(tmp.mut_slice(i * 16, i * 16 + 4), a);
+        write_u32_le(tmp.mut_slice(i * 16 + 4, i * 16 + 8), b);
+        write_u32_le(tmp.mut_slice(i * 16 + 8, i * 16 + 12), c);
+        write_u32_le(tmp.mut_slice(i * 16 + 12, i * 16 + 16), d);
+    }
+    return bit_splice_1x128_with_int128(tmp);
+}
 
+fn un_bit_splice_1x128_with_int128(bs: &Bs8State<u32x4>, output: &mut [u8]) {
+    let Bs8State(t0, t1, t2, t3, t4, t5, t6, t7) = *bs;
 
+    let bit0 = u32x4(0x01010101, 0x01010101, 0x01010101, 0x01010101);
+    let bit1 = u32x4(0x02020202, 0x02020202, 0x02020202, 0x02020202);
+    let bit2 = u32x4(0x04040404, 0x04040404, 0x04040404, 0x04040404);
+    let bit3 = u32x4(0x08080808, 0x08080808, 0x08080808, 0x08080808);
+    let bit4 = u32x4(0x10101010, 0x10101010, 0x10101010, 0x10101010);
+    let bit5 = u32x4(0x20202020, 0x20202020, 0x20202020, 0x20202020);
+    let bit6 = u32x4(0x40404040, 0x40404040, 0x40404040, 0x40404040);
+    let bit7 = u32x4(0x80808080, 0x80808080, 0x80808080, 0x80808080);
 
+    // decode the individual blocks, in row-major order
+    // TODO: this is identical to the same block in bit_splice_1x128_with_int128
+    let x0 = (t0 & bit0) | (t1.lsh(1) & bit1) | (t2.lsh(2) & bit2) | (t3.lsh(3) & bit3) |
+        (t4.lsh(4) & bit4) | (t5.lsh(5) & bit5) | (t6.lsh(6) & bit6) | (t7.lsh(7) & bit7);
+    let x1 = (t0.rsh(1) & bit0) | (t1 & bit1) | (t2.lsh(1) & bit2) | (t3.lsh(2) & bit3) |
+        (t4.lsh(3) & bit4) | (t5.lsh(4) & bit5) | (t6.lsh(5) & bit6) | (t7.lsh(6) & bit7);
+    let x2 = (t0.rsh(2) & bit0) | (t1.rsh(1) & bit1) | (t2 & bit2) | (t3.lsh(1) & bit3) |
+        (t4.lsh(2) & bit4) | (t5.lsh(3) & bit5) | (t6.lsh(4) & bit6) | (t7.lsh(5) & bit7);
+    let x3 = (t0.rsh(3) & bit0) | (t1.rsh(2) & bit1) | (t2.rsh(1) & bit2) | (t3 & bit3) |
+        (t4.lsh(1) & bit4) | (t5.lsh(2) & bit5) | (t6.lsh(3) & bit6) | (t7.lsh(4) & bit7);
+    let x4 = (t0.rsh(4) & bit0) | (t1.rsh(3) & bit1) | (t2.rsh(2) & bit2) | (t3.rsh(1) & bit3) |
+        (t4 & bit4) | (t5.lsh(1) & bit5) | (t6.lsh(2) & bit6) | (t7.lsh(3) & bit7);
+    let x5 = (t0.rsh(5) & bit0) | (t1.rsh(4) & bit1) | (t2.rsh(3) & bit2) | (t3.rsh(2) & bit3) |
+        (t4.rsh(1) & bit4) | (t5 & bit5) | (t6.lsh(1) & bit6) | (t7.lsh(2) & bit7);
+    let x6 = (t0.rsh(6) & bit0) | (t1.rsh(5) & bit1) | (t2.rsh(4) & bit2) | (t3.rsh(3) & bit3) |
+        (t4.rsh(2) & bit4) | (t5.rsh(1) & bit5) | (t6 & bit6) | (t7.lsh(1) & bit7);
+    let x7 = (t0.rsh(7) & bit0) | (t1.rsh(6) & bit1) | (t2.rsh(5) & bit2) | (t3.rsh(4) & bit3) |
+        (t4.rsh(3) & bit4) | (t5.rsh(2) & bit5) | (t6.rsh(1) & bit6) | (t7 & bit7);
 
+    fn write_row_major(block: &u32x4, output: &mut [u8]) {
+        let u32x4(a0, a1, a2, a3) = *block;
+        output[0] = a0 as u8;
+        output[1] = a1 as u8;
+        output[2] = a2 as u8;
+        output[3] = a3 as u8;
+        output[4] = (a0 >> 8) as u8;
+        output[5] = (a1 >> 8) as u8;
+        output[6] = (a2 >> 8) as u8;
+        output[7] = (a3 >> 8) as u8;
+        output[8] = (a0 >> 16) as u8;
+        output[9] = (a1 >> 16) as u8;
+        output[10] = (a2 >> 16) as u8;
+        output[11] = (a3 >> 16) as u8;
+        output[12] = (a0 >> 24) as u8;
+        output[13] = (a1 >> 24) as u8;
+        output[14] = (a2 >> 24) as u8;
+        output[15] = (a3 >> 24) as u8;
+    }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    write_row_major(&x0, output.mut_slice(0, 16));
+    write_row_major(&x1, output.mut_slice(16, 32));
+    write_row_major(&x2, output.mut_slice(32, 48));
+    write_row_major(&x3, output.mut_slice(48, 64));
+    write_row_major(&x4, output.mut_slice(64, 80));
+    write_row_major(&x5, output.mut_slice(80, 96));
+    write_row_major(&x6, output.mut_slice(96, 112));
+    write_row_major(&x7, output.mut_slice(112, 128))
+}
 
 
 impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs2State<T> {
@@ -753,6 +649,7 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs2State<T> {
     }
 }
 
+
 impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs4State<T> {
     // multiply in GF(2^4), using normal basis (alpha^8,alpha^2)
     fn mul(&self, y: &Bs4State<T>) -> Bs4State<T> {
@@ -785,6 +682,7 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs4State<T> {
         return q.join(&p);
     }
 }
+
 
 impl <T: BitXor<T, T> + BitAnd<T, T> + Clone + Zero> Bs8State<T> {
     // inverse in GF(2^8), using normal basis (d^16,d)
@@ -913,6 +811,128 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone + Zero> Bs8State<T> {
     }
 }
 
+
+impl <T: AesRowTypeOps> AesOps for Bs8State<T> {
+    // find Sbox of n in GF(2^8) mod POLY
+    fn sub_bytes(&self) -> Bs8State<T> {
+        let nb = self.change_basis(AesRowTypeOps::a2x::<T>());
+        let inv = nb.inv();
+        let nb2 = inv.change_basis(AesRowTypeOps::x2s::<T>());
+        let x63 = AesRowTypeOps::x63::<T>();
+        return nb2.xor(&x63);
+    }
+
+    // find inverse Sbox of n in GF(2^8) mod POLY
+    fn inv_sub_bytes(&self) -> Bs8State<T> {
+        let x63 = AesRowTypeOps::x63::<T>();
+        let t = self.xor(&x63);
+        let nb = t.change_basis(AesRowTypeOps::s2x::<T>());
+        let inv = nb.inv();
+        let nb2 = inv.change_basis(AesRowTypeOps::x2a::<T>());
+        return nb2;
+    }
+
+    fn shift_rows(&self) -> Bs8State<T> {
+        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
+        return Bs8State(
+            x0.shift_row(),
+            x1.shift_row(),
+            x2.shift_row(),
+            x3.shift_row(),
+            x4.shift_row(),
+            x5.shift_row(),
+            x6.shift_row(),
+            x7.shift_row());
+    }
+
+    fn inv_shift_rows(&self) -> Bs8State<T> {
+        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
+        return Bs8State(
+            x0.inv_shift_row(),
+            x1.inv_shift_row(),
+            x2.inv_shift_row(),
+            x3.inv_shift_row(),
+            x4.inv_shift_row(),
+            x5.inv_shift_row(),
+            x6.inv_shift_row(),
+            x7.inv_shift_row());
+    }
+
+    fn mix_columns(&self) -> Bs8State<T> {
+        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
+
+        let x0out = x7 ^ x7.ror1() ^ x0.ror1() ^ (x0 ^ x0.ror1()).ror2();
+        let x1out = x0 ^ x0.ror1() ^ *x7 ^ x7.ror1() ^ x1.ror1() ^ (x1 ^ x1.ror1()).ror2();
+        let x2out = x1 ^ x1.ror1() ^ x2.ror1() ^ (x2 ^ x2.ror1()).ror2();
+        let x3out = x2 ^ x2.ror1() ^ *x7 ^ x7.ror1() ^ x3.ror1() ^ (x3 ^ x3.ror1()).ror2();
+        let x4out = x3 ^ x3.ror1() ^ *x7 ^ x7.ror1() ^ x4.ror1() ^ (x4 ^ x4.ror1()).ror2();
+        let x5out = x4 ^ x4.ror1() ^ x5.ror1() ^ (x5 ^ x5.ror1()).ror2();
+        let x6out = x5 ^ x5.ror1() ^ x6.ror1() ^ (x6 ^ x6.ror1()).ror2();
+        let x7out = x6 ^ x6.ror1() ^ x7.ror1() ^ (x7 ^ x7.ror1()).ror2();
+
+        return Bs8State(x0out, x1out, x2out, x3out, x4out, x5out, x6out, x7out);
+    }
+
+    fn inv_mix_columns(&self) -> Bs8State<T> {
+        let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
+
+        let x0out = *x5 ^ *x6 ^ *x7 ^
+            x5.ror1() ^ x7.ror1() ^ x0.ror1() ^
+            x0.ror2() ^ x5.ror2() ^ x6.ror2() ^
+            x5.ror3() ^ x0.ror3();
+        let x1out = *x5 ^ *x0 ^
+            x6.ror1() ^ x5.ror1() ^ x0.ror1() ^ x7.ror1() ^ x1.ror1() ^
+            x1.ror2() ^ x7.ror2() ^ x5.ror2() ^
+            x6.ror3() ^ x5.ror3() ^ x1.ror3();
+        let x2out = *x6 ^ *x0 ^ *x1 ^
+            x7.ror1() ^ x6.ror1() ^ x1.ror1() ^ x2.ror1() ^
+            x0.ror2() ^ x2.ror2() ^ x6.ror2() ^
+            x7.ror3() ^ x6.ror3() ^ x2.ror3();
+        let x3out = *x0 ^ *x5 ^ *x1 ^ *x6 ^ *x2 ^
+            x0.ror1() ^ x5.ror1() ^ x2.ror1() ^ x3.ror1() ^
+            x0.ror2() ^ x1.ror2() ^ x3.ror2() ^ x5.ror2() ^ x6.ror2() ^ x7.ror2() ^
+            x0.ror3() ^ x5.ror3() ^ x7.ror3() ^ x3.ror3();
+        let x4out = *x1 ^ *x5 ^ *x2 ^ *x3 ^
+            x1.ror1() ^ x6.ror1() ^ x5.ror1() ^ x3.ror1() ^ x7.ror1() ^ x4.ror1() ^
+            x1.ror2() ^ x2.ror2() ^ x4.ror2() ^ x5.ror2() ^ x7.ror2() ^
+            x1.ror3() ^ x5.ror3() ^ x6.ror3() ^ x4.ror3();
+        let x5out = *x2 ^ *x6 ^ *x3 ^ *x4 ^
+            x2.ror1() ^ x7.ror1() ^ x6.ror1() ^ x4.ror1() ^ x5.ror1() ^
+            x2.ror2() ^ x3.ror2() ^ x5.ror2() ^ x6.ror2() ^
+            x2.ror3() ^ x6.ror3() ^ x7.ror3() ^ x5.ror3();
+        let x6out =  *x3 ^ *x7 ^ *x4 ^ *x5 ^
+            x3.ror1() ^ x7.ror1() ^ x5.ror1() ^ x6.ror1() ^
+            x3.ror2() ^ x4.ror2() ^ x6.ror2() ^ x7.ror2() ^
+            x3.ror3() ^ x7.ror3() ^ x6.ror3();
+        let x7out = *x4 ^ *x5 ^ *x6 ^
+            x4.ror1() ^ x6.ror1() ^ x7.ror1() ^
+            x4.ror2() ^ x5.ror2() ^ x7.ror2() ^
+            x4.ror3() ^ x7.ror3();
+
+        Bs8State(x0out, x1out, x2out, x3out, x4out, x5out, x6out, x7out)
+    }
+
+    fn add_round_key(&self, rk: &Bs8State<T>) -> Bs8State<T> {
+        return self.xor(rk);
+    }
+}
+
+
+trait AesRowTypeOps: BitXor<Self, Self> + BitAnd<Self, Self> + Clone + Zero {
+    fn a2x() -> &'static [[Self, ..8], ..8];
+    fn x2s() -> &'static [[Self, ..8], ..8];
+    fn s2x() -> &'static [[Self, ..8], ..8];
+    fn x2a() -> &'static [[Self, ..8], ..8];
+    fn x63() -> Bs8State<Self>;
+
+    fn shift_row(&self) -> Self;
+    fn inv_shift_row(&self) -> Self;
+    fn ror1(&self) -> Self;
+    fn ror2(&self) -> Self;
+    fn ror3(&self) -> Self;
+}
+
+
 // to convert between polynomial (A^7...1) basis A & normal basis X
 // or to basis S which incorporates bit matrix of Sbox
 static A2X_u32: [[u32, ..8], ..8] = [
@@ -925,6 +945,7 @@ static A2X_u32: [[u32, ..8], ..8] = [
     [-1,  0,  0, -1,  0, -1,  0, -1],
     [-1, -1, -1, -1, -1, -1, -1, -1]
 ];
+
 static X2A_u32: [[u32, ..8], ..8] = [
     [ 0,  0, -1,  0,  0, -1, -1,  0],
     [ 0,  0,  0, -1, -1, -1, -1,  0],
@@ -935,6 +956,7 @@ static X2A_u32: [[u32, ..8], ..8] = [
     [ 0, -1, -1, -1, -1,  0, -1, -1],
     [ 0,  0,  0,  0,  0, -1, -1,  0],
 ];
+
 static X2S_u32: [[u32, ..8], ..8] = [
     [ 0,  0,  0, -1, -1,  0, -1,  0],
     [-1,  0, -1, -1,  0, -1,  0,  0],
@@ -945,6 +967,7 @@ static X2S_u32: [[u32, ..8], ..8] = [
     [-1, -1,  0,  0,  0,  0,  0,  0],
     [ 0,  0, -1,  0,  0, -1,  0,  0],
 ];
+
 static S2X_u32: [[u32, ..8], ..8] = [
     [0, 0 ,  -1, -1,  0,  0,  0, -1],
     [-1,  0,  0, -1, -1, -1, -1,  0],
@@ -956,12 +979,47 @@ static S2X_u32: [[u32, ..8], ..8] = [
     [-1, -1,  0,  0, -1,  0, -1,  0],
 ];
 
+impl AesRowTypeOps for u32 {
+    fn a2x() -> &'static [[u32, ..8], ..8] { &A2X_u32 }
+    fn x2s() -> &'static [[u32, ..8], ..8] { &X2S_u32 }
+    fn s2x() -> &'static [[u32, ..8], ..8] { &S2X_u32 }
+    fn x2a() -> &'static [[u32, ..8], ..8] { &X2A_u32 }
+    fn x63() -> Bs8State<u32> { Bs8State(-1, -1, 0, 0, 0, -1, -1, 0) }
 
+    fn shift_row(&self) -> u32 {
+        // first 4 bits represent first row - don't shift
+        (*self & 0x000f) |
+        // next 4 bits represent 2nd row - left rotate 1 bit
+        ((*self & 0x00e0) >> 1) | ((*self & 0x0010) << 3) |
+        // next 4 bits represent 3rd row - left rotate 2 bits
+        ((*self & 0x0c00) >> 2) | ((*self & 0x0300) << 2) |
+        // next 4 bits represent 4th row - left rotate 3 bits
+        ((*self & 0x8000) >> 3) | ((*self & 0x7000) << 1)
+    }
 
+    fn inv_shift_row(&self) -> u32 {
+        // first 4 bits represent first row - don't shift
+        (*self & 0x000f) |
+        // next 4 bits represent 2nd row - right rotate 1 bit
+        ((*self & 0x0080) >> 3) | ((*self & 0x0070) << 1) |
+        // next 4 bits represent 3rd row - right rotate 2 bits
+        ((*self & 0x0c00) >> 2) | ((*self & 0x0300) << 2) |
+        // next 4 bits represent 4th row - right rotate 3 bits
+        ((*self & 0xe000) >> 1) | ((*self & 0x1000) << 3)
+    }
 
+    fn ror1(&self) -> u32 {
+        ((*self >> 4) & 0x0fff) | (*self << 12)
+    }
 
+    fn ror2(&self) -> u32 {
+        ((*self >> 8) & 0x00ff) | (*self << 8)
+    }
 
-
+    fn ror3(&self) -> u32 {
+        ((*self >> 12) & 0x000f) | (*self << 4)
+    }
+}
 
 
 impl u32x4 {
@@ -973,6 +1031,7 @@ impl u32x4 {
             (a2 << s) | (a1 >> (32 - s)),
             (a3 << s) | (a2 >> (32 - s)));
     }
+
     fn rsh(&self, s: uint) -> u32x4 {
         let u32x4(a0, a1, a2, a3) = *self;
         return u32x4(
@@ -995,17 +1054,59 @@ impl BitAnd<u32x4, u32x4> for u32x4 {
     }
 }
 
-
-
-
 impl Zero for u32x4 {
     fn zero() -> u32x4 {
         return u32x4(0, 0, 0, 0);
     }
+
     fn is_zero(&self) -> bool {
         fail!("Not implemented.");
     }
 }
+
+static a2x_int128: [[u32x4, ..8], ..8] = [
+    [o!(), o!(), o!(), x!(), x!(), o!(), o!(), x!()],
+    [x!(), x!(), o!(), o!(), x!(), x!(), x!(), x!()],
+    [o!(), x!(), o!(), o!(), x!(), x!(), x!(), x!()],
+    [o!(), o!(), o!(), x!(), o!(), o!(), x!(), o!()],
+    [x!(), o!(), o!(), x!(), o!(), o!(), o!(), o!()],
+    [x!(), o!(), o!(), o!(), o!(), o!(), o!(), x!()],
+    [x!(), o!(), o!(), x!(), o!(), x!(), o!(), x!()],
+    [x!(), x!(), x!(), x!(), x!(), x!(), x!(), x!()]
+];
+
+static x2a_int128: [[u32x4, ..8], ..8] = [
+    [o!(), o!(), x!(), o!(), o!(), x!(), x!(), o!()],
+    [o!(), o!(), o!(), x!(), x!(), x!(), x!(), o!()],
+    [o!(), x!(), x!(), x!(), o!(), x!(), x!(), o!()],
+    [o!(), o!(), x!(), x!(), o!(), o!(), o!(), x!()],
+    [o!(), o!(), o!(), x!(), o!(), x!(), x!(), o!()],
+    [x!(), o!(), o!(), x!(), o!(), x!(), o!(), o!()],
+    [o!(), x!(), x!(), x!(), x!(), o!(), x!(), x!()],
+    [o!(), o!(), o!(), o!(), o!(), x!(), x!(), o!()],
+];
+
+static x2s_int128: [[u32x4, ..8], ..8] = [
+    [o!(), o!(), o!(), x!(), x!(), o!(), x!(), o!()],
+    [x!(), o!(), x!(), x!(), o!(), x!(), o!(), o!()],
+    [o!(), x!(), x!(), x!(), x!(), o!(), o!(), x!()],
+    [x!(), x!(), o!(), x!(), o!(), o!(), o!(), o!()],
+    [o!(), o!(), x!(), x!(), x!(), o!(), x!(), x!()],
+    [o!(), o!(), x!(), o!(), o!(), o!(), o!(), o!()],
+    [x!(), x!(), o!(), o!(), o!(), o!(), o!(), o!()],
+    [o!(), o!(), x!(), o!(), o!(), x!(), o!(), o!()],
+];
+
+static s2x_int128: [[u32x4, ..8], ..8] = [
+    [o!(), o!(), x!(), x!(), o!(), o!(), o!(), x!()],
+    [x!(), o!(), o!(), x!(), x!(), x!(), x!(), o!()],
+    [x!(), o!(), x!(), o!(), o!(), o!(), o!(), o!()],
+    [x!(), x!(), o!(), x!(), o!(), x!(), x!(), x!()],
+    [o!(), x!(), o!(), o!(), x!(), o!(), o!(), o!()],
+    [o!(), o!(), x!(), o!(), o!(), o!(), o!(), o!()],
+    [x!(), o!(), o!(), o!(), x!(), o!(), x!(), o!()],
+    [x!(), x!(), o!(), o!(), x!(), o!(), x!(), o!()],
+];
 
 impl AesRowTypeOps for u32x4 {
     fn a2x() -> &'static [[u32x4, ..8], ..8] { &a2x_int128 }
@@ -1018,193 +1119,24 @@ impl AesRowTypeOps for u32x4 {
         let u32x4(a0, a1, a2, a3) = *self;
         return u32x4(a0, a1 >> 8 | a1 << 24, a2 >> 16 | a2 << 16, a3 >> 24 | a3 << 8);
     }
+
     fn inv_shift_row(&self) -> u32x4 {
         let u32x4(a0, a1, a2, a3) = *self;
         return u32x4(a0, a1 >> 24 | a1 << 8, a2 >> 16 | a2 << 16, a3 >> 8 | a3 << 24);
     }
+
     fn ror1(&self) -> u32x4 {
         let u32x4(a0, a1, a2, a3) = *self;
         return u32x4(a1, a2, a3, a0);
     }
+
     fn ror2(&self) -> u32x4 {
         let u32x4(a0, a1, a2, a3) = *self;
         return u32x4(a2, a3, a0, a1);
     }
+
     fn ror3(&self) -> u32x4 {
         let u32x4(a0, a1, a2, a3) = *self;
         return u32x4(a3, a0, a1, a2);
     }
-}
-
-
-static a2x_int128: [[u32x4, ..8], ..8] = [
-    [o!(), o!(), o!(), x!(), x!(), o!(), o!(), x!()],
-    [x!(), x!(), o!(), o!(), x!(), x!(), x!(), x!()],
-    [o!(), x!(), o!(), o!(), x!(), x!(), x!(), x!()],
-    [o!(), o!(), o!(), x!(), o!(), o!(), x!(), o!()],
-    [x!(), o!(), o!(), x!(), o!(), o!(), o!(), o!()],
-    [x!(), o!(), o!(), o!(), o!(), o!(), o!(), x!()],
-    [x!(), o!(), o!(), x!(), o!(), x!(), o!(), x!()],
-    [x!(), x!(), x!(), x!(), x!(), x!(), x!(), x!()]
-];
-static x2a_int128: [[u32x4, ..8], ..8] = [
-    [o!(), o!(), x!(), o!(), o!(), x!(), x!(), o!()],
-    [o!(), o!(), o!(), x!(), x!(), x!(), x!(), o!()],
-    [o!(), x!(), x!(), x!(), o!(), x!(), x!(), o!()],
-    [o!(), o!(), x!(), x!(), o!(), o!(), o!(), x!()],
-    [o!(), o!(), o!(), x!(), o!(), x!(), x!(), o!()],
-    [x!(), o!(), o!(), x!(), o!(), x!(), o!(), o!()],
-    [o!(), x!(), x!(), x!(), x!(), o!(), x!(), x!()],
-    [o!(), o!(), o!(), o!(), o!(), x!(), x!(), o!()],
-];
-static x2s_int128: [[u32x4, ..8], ..8] = [
-    [o!(), o!(), o!(), x!(), x!(), o!(), x!(), o!()],
-    [x!(), o!(), x!(), x!(), o!(), x!(), o!(), o!()],
-    [o!(), x!(), x!(), x!(), x!(), o!(), o!(), x!()],
-    [x!(), x!(), o!(), x!(), o!(), o!(), o!(), o!()],
-    [o!(), o!(), x!(), x!(), x!(), o!(), x!(), x!()],
-    [o!(), o!(), x!(), o!(), o!(), o!(), o!(), o!()],
-    [x!(), x!(), o!(), o!(), o!(), o!(), o!(), o!()],
-    [o!(), o!(), x!(), o!(), o!(), x!(), o!(), o!()],
-];
-static s2x_int128: [[u32x4, ..8], ..8] = [
-    [o!(), o!(), x!(), x!(), o!(), o!(), o!(), x!()],
-    [x!(), o!(), o!(), x!(), x!(), x!(), x!(), o!()],
-    [x!(), o!(), x!(), o!(), o!(), o!(), o!(), o!()],
-    [x!(), x!(), o!(), x!(), o!(), x!(), x!(), x!()],
-    [o!(), x!(), o!(), o!(), x!(), o!(), o!(), o!()],
-    [o!(), o!(), x!(), o!(), o!(), o!(), o!(), o!()],
-    [x!(), o!(), o!(), o!(), x!(), o!(), x!(), o!()],
-    [x!(), x!(), o!(), o!(), x!(), o!(), x!(), o!()],
-];
-
-fn bit_splice_1x128_with_int128(data: &[u8]) -> Bs8State<u32x4> {
-    fn read_row_major(data: &[u8]) -> u32x4 {
-        return u32x4(
-            (data[0] as u32) |
-            ((data[4] as u32) << 8) |
-            ((data[8] as u32) << 16) |
-            ((data[12] as u32) << 24),
-            (data[1] as u32) |
-            ((data[5] as u32) << 8) |
-            ((data[9] as u32) << 16) |
-            ((data[13] as u32) << 24),
-            (data[2] as u32) |
-            ((data[6] as u32) << 8) |
-            ((data[10] as u32) << 16) |
-            ((data[14] as u32) << 24),
-            (data[3] as u32) |
-            ((data[7] as u32) << 8) |
-            ((data[11] as u32) << 16) |
-            ((data[15] as u32) << 24));
-    }
-
-    let bit0 = u32x4(0x01010101, 0x01010101, 0x01010101, 0x01010101);
-    let bit1 = u32x4(0x02020202, 0x02020202, 0x02020202, 0x02020202);
-    let bit2 = u32x4(0x04040404, 0x04040404, 0x04040404, 0x04040404);
-    let bit3 = u32x4(0x08080808, 0x08080808, 0x08080808, 0x08080808);
-    let bit4 = u32x4(0x10101010, 0x10101010, 0x10101010, 0x10101010);
-    let bit5 = u32x4(0x20202020, 0x20202020, 0x20202020, 0x20202020);
-    let bit6 = u32x4(0x40404040, 0x40404040, 0x40404040, 0x40404040);
-    let bit7 = u32x4(0x80808080, 0x80808080, 0x80808080, 0x80808080);
-
-    let t0 = read_row_major(data.slice(0, 16));
-    let t1 = read_row_major(data.slice(16, 32));
-    let t2 = read_row_major(data.slice(32, 48));
-    let t3 = read_row_major(data.slice(48, 64));
-    let t4 = read_row_major(data.slice(64, 80));
-    let t5 = read_row_major(data.slice(80, 96));
-    let t6 = read_row_major(data.slice(96, 112));
-    let t7 = read_row_major(data.slice(112, 128));
-
-    let x0 = ((t0) & bit0) | ((t1.lsh(1)) & bit1) | ((t2.lsh(2)) & bit2) | ((t3.lsh(3)) & bit3) |
-        ((t4.lsh(4)) & bit4) | ((t5.lsh(5)) & bit5) | ((t6.lsh(6)) & bit6) | ((t7.lsh(7)) & bit7);
-    let x1 = ((t0.rsh(1)) & bit0) | ((t1) & bit1) | ((t2.lsh(1)) & bit2) | ((t3.lsh(2)) & bit3) |
-        ((t4.lsh(3)) & bit4) | ((t5.lsh(4)) & bit5) | ((t6.lsh(5)) & bit6) | ((t7.lsh(6)) & bit7);
-    let x2 = ((t0.rsh(2)) & bit0) | ((t1.rsh(1)) & bit1) | ((t2) & bit2) | ((t3.lsh(1)) & bit3) |
-        ((t4.lsh(2)) & bit4) | ((t5.lsh(3)) & bit5) | ((t6.lsh(4)) & bit6) | ((t7.lsh(5)) & bit7);
-    let x3 = ((t0.rsh(3)) & bit0) | ((t1.rsh(2)) & bit1) | ((t2.rsh(1)) & bit2) | ((t3) & bit3) |
-        ((t4.lsh(1)) & bit4) | ((t5.lsh(2)) & bit5) | ((t6.lsh(3)) & bit6) | ((t7.lsh(4)) & bit7);
-    let x4 = ((t0.rsh(4)) & bit0) | ((t1.rsh(3)) & bit1) | ((t2.rsh(2)) & bit2) | ((t3.rsh(1)) & bit3) |
-        ((t4) & bit4) | ((t5.lsh(1)) & bit5) | ((t6.lsh(2)) & bit6) | ((t7.lsh(3)) & bit7);
-    let x5 = ((t0.rsh(5)) & bit0) | ((t1.rsh(4)) & bit1) | ((t2.rsh(3)) & bit2) | ((t3.rsh(2)) & bit3) |
-        ((t4.rsh(1)) & bit4) | ((t5) & bit5) | ((t6.lsh(1)) & bit6) | ((t7.lsh(2)) & bit7);
-    let x6 = ((t0.rsh(6)) & bit0) | ((t1.rsh(5)) & bit1) | ((t2.rsh(4)) & bit2) | ((t3.rsh(3)) & bit3) |
-        ((t4.rsh(2)) & bit4) | ((t5.rsh(1)) & bit5) | ((t6) & bit6) | ((t7.lsh(1)) & bit7);
-    let x7 = ((t0.rsh(7)) & bit0) | ((t1.rsh(6)) & bit1) | ((t2.rsh(5)) & bit2) | ((t3.rsh(4)) & bit3) |
-        ((t4.rsh(3)) & bit4) | ((t5.rsh(2)) & bit5) | ((t6.rsh(1)) & bit6) | ((t7) & bit7);
-
-    return Bs8State(x0, x1, x2, x3, x4, x5, x6, x7);
-}
-
-fn bit_splice_fill_4x4_with_int128(a: u32, b: u32, c: u32, d: u32) -> Bs8State<u32x4> {
-    let mut tmp = [0u8, ..128];
-    for i in range(0u, 8) {
-        write_u32_le(tmp.mut_slice(i * 16, i * 16 + 4), a);
-        write_u32_le(tmp.mut_slice(i * 16 + 4, i * 16 + 8), b);
-        write_u32_le(tmp.mut_slice(i * 16 + 8, i * 16 + 12), c);
-        write_u32_le(tmp.mut_slice(i * 16 + 12, i * 16 + 16), d);
-    }
-    return bit_splice_1x128_with_int128(tmp);
-}
-
-fn un_bit_splice_1x128_with_int128(bs: &Bs8State<u32x4>, output: &mut [u8]) {
-    let Bs8State(t0, t1, t2, t3, t4, t5, t6, t7) = *bs;
-
-    let bit0 = u32x4(0x01010101, 0x01010101, 0x01010101, 0x01010101);
-    let bit1 = u32x4(0x02020202, 0x02020202, 0x02020202, 0x02020202);
-    let bit2 = u32x4(0x04040404, 0x04040404, 0x04040404, 0x04040404);
-    let bit3 = u32x4(0x08080808, 0x08080808, 0x08080808, 0x08080808);
-    let bit4 = u32x4(0x10101010, 0x10101010, 0x10101010, 0x10101010);
-    let bit5 = u32x4(0x20202020, 0x20202020, 0x20202020, 0x20202020);
-    let bit6 = u32x4(0x40404040, 0x40404040, 0x40404040, 0x40404040);
-    let bit7 = u32x4(0x80808080, 0x80808080, 0x80808080, 0x80808080);
-
-    // decode the individual blocks, in row-major order
-    // TODO: this is identical to the same block in bit_splice_1x128_with_int128
-    let x0 = ((t0) & bit0) | ((t1.lsh(1)) & bit1) | ((t2.lsh(2)) & bit2) | ((t3.lsh(3)) & bit3) |
-        ((t4.lsh(4)) & bit4) | ((t5.lsh(5)) & bit5) | ((t6.lsh(6)) & bit6) | ((t7.lsh(7)) & bit7);
-    let x1 = ((t0.rsh(1)) & bit0) | ((t1) & bit1) | ((t2.lsh(1)) & bit2) | ((t3.lsh(2)) & bit3) |
-        ((t4.lsh(3)) & bit4) | ((t5.lsh(4)) & bit5) | ((t6.lsh(5)) & bit6) | ((t7.lsh(6)) & bit7);
-    let x2 = ((t0.rsh(2)) & bit0) | ((t1.rsh(1)) & bit1) | ((t2) & bit2) | ((t3.lsh(1)) & bit3) |
-        ((t4.lsh(2)) & bit4) | ((t5.lsh(3)) & bit5) | ((t6.lsh(4)) & bit6) | ((t7.lsh(5)) & bit7);
-    let x3 = ((t0.rsh(3)) & bit0) | ((t1.rsh(2)) & bit1) | ((t2.rsh(1)) & bit2) | ((t3) & bit3) |
-        ((t4.lsh(1)) & bit4) | ((t5.lsh(2)) & bit5) | ((t6.lsh(3)) & bit6) | ((t7.lsh(4)) & bit7);
-    let x4 = ((t0.rsh(4)) & bit0) | ((t1.rsh(3)) & bit1) | ((t2.rsh(2)) & bit2) | ((t3.rsh(1)) & bit3) |
-        ((t4) & bit4) | ((t5.lsh(1)) & bit5) | ((t6.lsh(2)) & bit6) | ((t7.lsh(3)) & bit7);
-    let x5 = ((t0.rsh(5)) & bit0) | ((t1.rsh(4)) & bit1) | ((t2.rsh(3)) & bit2) | ((t3.rsh(2)) & bit3) |
-        ((t4.rsh(1)) & bit4) | ((t5) & bit5) | ((t6.lsh(1)) & bit6) | ((t7.lsh(2)) & bit7);
-    let x6 = ((t0.rsh(6)) & bit0) | ((t1.rsh(5)) & bit1) | ((t2.rsh(4)) & bit2) | ((t3.rsh(3)) & bit3) |
-        ((t4.rsh(2)) & bit4) | ((t5.rsh(1)) & bit5) | ((t6) & bit6) | ((t7.lsh(1)) & bit7);
-    let x7 = ((t0.rsh(7)) & bit0) | ((t1.rsh(6)) & bit1) | ((t2.rsh(5)) & bit2) | ((t3.rsh(4)) & bit3) |
-        ((t4.rsh(3)) & bit4) | ((t5.rsh(2)) & bit5) | ((t6.rsh(1)) & bit6) | ((t7) & bit7);
-
-    fn write_row_major(block: &u32x4, output: &mut [u8]) {
-        let u32x4(a0, a1, a2, a3) = *block;
-        output[0] = a0 as u8;
-        output[1] = a1 as u8;
-        output[2] = a2 as u8;
-        output[3] = a3 as u8;
-        output[4] = (a0 >> 8) as u8;
-        output[5] = (a1 >> 8) as u8;
-        output[6] = (a2 >> 8) as u8;
-        output[7] = (a3 >> 8) as u8;
-        output[8] = (a0 >> 16) as u8;
-        output[9] = (a1 >> 16) as u8;
-        output[10] = (a2 >> 16) as u8;
-        output[11] = (a3 >> 16) as u8;
-        output[12] = (a0 >> 24) as u8;
-        output[13] = (a1 >> 24) as u8;
-        output[14] = (a2 >> 24) as u8;
-        output[15] = (a3 >> 24) as u8;
-    }
-
-    write_row_major(&x0, output.mut_slice(0, 16));
-    write_row_major(&x1, output.mut_slice(16, 32));
-    write_row_major(&x2, output.mut_slice(32, 48));
-    write_row_major(&x3, output.mut_slice(48, 64));
-    write_row_major(&x4, output.mut_slice(64, 80));
-    write_row_major(&x5, output.mut_slice(80, 96));
-    write_row_major(&x6, output.mut_slice(96, 112));
-    write_row_major(&x7, output.mut_slice(112, 128))
 }

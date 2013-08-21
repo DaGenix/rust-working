@@ -617,7 +617,7 @@ mod bench {
         // Safe (S-boxes bitspliced only; not working): 6 MB/s
         // Safe (bs) - 10 MB/s!
 
-        let a = AesSafe128Decryptor::new(key);
+        let a = AesDangerous128Decryptor::new(key);
 
         let mut tmp = [0u8, ..16];
 
@@ -641,6 +641,6 @@ mod bench {
             a.decrypt_block(plain, tmp);
         }
 
-        bh.bytes = (plain.len()) as u64;
+        bh.bytes = (plain.len() * 100) as u64;
     }
 }
