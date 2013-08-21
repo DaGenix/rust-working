@@ -131,17 +131,28 @@ macro_rules! define_dec(
     )
 )
 
+#[cfg(target_arch = "x86")]
+#[cfg(target_arch = "x86_64")]
 enum AesEncryptionEngine128 {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
     AesNiEncryptionEngine128(AesNi128Encryptor),
     AesSafeEncryptionEngine128(AesSafe128Encryptor)
 }
 
+#[cfg(not(target_arch = "x86", target_arch = "x86_64"))]
+enum AesEncryptionEngine128 {
+    AesSafeEncryptionEngine128(AesSafe128Encryptor)
+}
+
+
+#[cfg(target_arch = "x86")]
+#[cfg(target_arch = "x86_64")]
 enum AesDecryptionEngine128 {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
     AesNiDecryptionEngine128(AesNi128Decryptor),
+    AesSafeDecryptionEngine128(AesSafe128Decryptor)
+}
+
+#[cfg(not(target_arch = "x86", target_arch = "x86_64"))]
+enum AesDecryptionEngine128 {
     AesSafeDecryptionEngine128(AesSafe128Decryptor)
 }
 
@@ -167,16 +178,26 @@ define_dec!(
     AesSafeDecryptionEngine128)
 
 
+#[cfg(not(target_arch = "x86", target_arch = "x86_64"))]
 enum AesEncryptionEngine192 {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
+    AesSafeEncryptionEngine192(AesSafe192Encryptor)
+}
+
+#[cfg(target_arch = "x86")]
+#[cfg(target_arch = "x86_64")]
+enum AesEncryptionEngine192 {
     AesNiEncryptionEngine192(AesNi192Encryptor),
     AesSafeEncryptionEngine192(AesSafe192Encryptor)
 }
 
+#[cfg(not(target_arch = "x86", target_arch = "x86_64"))]
 enum AesDecryptionEngine192 {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
+    AesSafeDecryptionEngine192(AesSafe192Decryptor)
+}
+
+#[cfg(target_arch = "x86")]
+#[cfg(target_arch = "x86_64")]
+enum AesDecryptionEngine192 {
     AesNiDecryptionEngine192(AesNi192Decryptor),
     AesSafeDecryptionEngine192(AesSafe192Decryptor)
 }
@@ -203,16 +224,26 @@ define_dec!(
     AesSafeDecryptionEngine192)
 
 
+#[cfg(not(target_arch = "x86", target_arch = "x86_64"))]
 enum AesEncryptionEngine256 {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
+    AesSafeEncryptionEngine256(AesSafe256Encryptor)
+}
+
+#[cfg(target_arch = "x86")]
+#[cfg(target_arch = "x86_64")]
+enum AesEncryptionEngine256 {
     AesNiEncryptionEngine256(AesNi256Encryptor),
     AesSafeEncryptionEngine256(AesSafe256Encryptor)
 }
 
+#[cfg(not(target_arch = "x86", target_arch = "x86_64"))]
 enum AesDecryptionEngine256 {
-    #[cfg(target_arch = "x86")]
-    #[cfg(target_arch = "x86_64")]
+    AesSafeDecryptionEngine256(AesSafe256Decryptor)
+}
+
+#[cfg(target_arch = "x86")]
+#[cfg(target_arch = "x86_64")]
+enum AesDecryptionEngine256 {
     AesNiDecryptionEngine256(AesNi256Decryptor),
     AesSafeDecryptionEngine256(AesSafe256Decryptor)
 }
@@ -602,12 +633,12 @@ mod bench {
         let key: [u8, ..16] = [1u8, ..16];
         let plain: [u8, ..128] = [2u8, ..128];
 
-        let a = AesSafe128EncryptorX8::new(key);
+        let a = AesSafe128DecryptorX8::new(key);
 
         let mut tmp = [0u8, ..128];
 
         do bh.iter {
-            a.encrypt_block(plain, tmp);
+            a.decrypt_block(plain, tmp);
         }
 
         bh.bytes = (plain.len()) as u64;
