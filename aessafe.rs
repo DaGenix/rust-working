@@ -360,7 +360,8 @@ enum KeyType {
 static RCON: [u32, ..10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
 
 // The round keys are created without bit-splicing the key data. The individual implementations bit
-// slice the round keys returned from this method.
+// slice the round keys returned from this method. This method, and the few methods above, are
+// derived from the BouncyCastle AES implementation.
 fn create_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]) {
     let (key_words, rounds) = match key.len() {
         16 => (4, 10u),
@@ -619,6 +620,15 @@ fn un_bit_slice_1x16_with_u32(bs: &Bs8State<u32>, output: &mut [u8]) {
 
 // Bit Slice a 128 byte array of eight 16 byte blocks. Each block is in column major order.
 fn bit_slice_1x128_with_u32x4(data: &[u8]) -> Bs8State<u32x4> {
+    let bit0 = u32x4(0x01010101, 0x01010101, 0x01010101, 0x01010101);
+    let bit1 = u32x4(0x02020202, 0x02020202, 0x02020202, 0x02020202);
+    let bit2 = u32x4(0x04040404, 0x04040404, 0x04040404, 0x04040404);
+    let bit3 = u32x4(0x08080808, 0x08080808, 0x08080808, 0x08080808);
+    let bit4 = u32x4(0x10101010, 0x10101010, 0x10101010, 0x10101010);
+    let bit5 = u32x4(0x20202020, 0x20202020, 0x20202020, 0x20202020);
+    let bit6 = u32x4(0x40404040, 0x40404040, 0x40404040, 0x40404040);
+    let bit7 = u32x4(0x80808080, 0x80808080, 0x80808080, 0x80808080);
+
     fn read_row_major(data: &[u8]) -> u32x4 {
         return u32x4(
             (data[0] as u32) |
@@ -638,15 +648,6 @@ fn bit_slice_1x128_with_u32x4(data: &[u8]) -> Bs8State<u32x4> {
             ((data[11] as u32) << 16) |
             ((data[15] as u32) << 24));
     }
-
-    let bit0 = u32x4(0x01010101, 0x01010101, 0x01010101, 0x01010101);
-    let bit1 = u32x4(0x02020202, 0x02020202, 0x02020202, 0x02020202);
-    let bit2 = u32x4(0x04040404, 0x04040404, 0x04040404, 0x04040404);
-    let bit3 = u32x4(0x08080808, 0x08080808, 0x08080808, 0x08080808);
-    let bit4 = u32x4(0x10101010, 0x10101010, 0x10101010, 0x10101010);
-    let bit5 = u32x4(0x20202020, 0x20202020, 0x20202020, 0x20202020);
-    let bit6 = u32x4(0x40404040, 0x40404040, 0x40404040, 0x40404040);
-    let bit7 = u32x4(0x80808080, 0x80808080, 0x80808080, 0x80808080);
 
     let t0 = read_row_major(data.slice(0, 16));
     let t1 = read_row_major(data.slice(16, 32));
@@ -752,6 +753,10 @@ fn un_bit_slice_1x128_with_u32x4(bs: &Bs8State<u32x4>, output: &mut [u8]) {
     write_row_major(&x7, output.mut_slice(112, 128))
 }
 
+// The Gf2Ops, Gf4Ops, and Gf8Ops traits specify the functions needed to calculate the AES S-Box
+// values. This particuar implementation of those S-Box values is taken from [7], so that is where
+// to look for details on how all that all works. This includes the transformations matrices defined
+// below for the change_basis operation on the u32 and u32x4 types.
 
 // Operations in GF(2^2) using normal basis (Omega^2,Omega)
 trait Gf2Ops {
@@ -881,7 +886,7 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone + Zero> Gf8Ops<T> for Bs8State<T> {
         let mut x7_out: T = Zero::zero();
 
         /*
-        // XXX - This is prettier, but crashes
+        // FIXME - #XXXX: This is prettier, but ICEs
 
         macro_rules! helper( ($x:ident, $idx:expr) => (
                 {
@@ -998,8 +1003,7 @@ impl <T: AesBitValueOps> AesOps for Bs8State<T> {
         let t = self.xor(&x63);
         let nb = t.change_basis(AesBitValueOps::s2x::<T>());
         let inv = nb.inv();
-        let nb2 = inv.change_basis(AesBitValueOps::x2a::<T>());
-        return nb2;
+        return inv.change_basis(AesBitValueOps::x2a::<T>());
     }
 
     fn shift_rows(&self) -> Bs8State<T> {
@@ -1028,6 +1032,7 @@ impl <T: AesBitValueOps> AesOps for Bs8State<T> {
             x7.inv_shift_row());
     }
 
+    // Formula from [5]
     fn mix_columns(&self) -> Bs8State<T> {
         let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
 
@@ -1043,6 +1048,7 @@ impl <T: AesBitValueOps> AesOps for Bs8State<T> {
         return Bs8State(x0out, x1out, x2out, x3out, x4out, x5out, x6out, x7out);
     }
 
+    // Formula from [6]
     fn inv_mix_columns(&self) -> Bs8State<T> {
         let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
 
