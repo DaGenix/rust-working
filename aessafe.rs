@@ -8,6 +8,127 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+/*!
+
+The `aessafe` module implements the AES algorithm completely in software without using any table
+lookups or other timing dependant mechanisms. This module actually contains two seperate
+implementations - an implementation that works on a single block at a time and a second
+implementation that processes 8 blocks in parallel. Some block encryption modes really only work if
+you are processing a single blocks (CFB, OFB, and CBC encryption for example) while other modes
+are trivially parallelizable (CTR and CBC decryption). Processing more blocks at once allows for
+greater efficiency, especially when using wide registers, such as the XMM registers available in
+x86 processors.
+
+## AES Algorithm
+
+There are lots of places to go to on the internet for an involved description of how AES works. For
+the purposes of this description, it sufficies to say that AES is just a block encryptor that takes
+a key of 16, 24, or 32 bytes and uses that to either encrypt or decrypt a block of 16 bytes. An
+encryption or decryption operation consists of a number of rounds which involve some combination of
+the following 4 basic operations:
+
+* ShiftRows
+* MixColumns
+* SubBytes
+* AddRoundKey
+
+## Timing problems
+
+Most software implementations of AES use a large set of lookup tables - generally at least the
+SubBytes step is implemented via lookup tables; faster implementations generally implement the
+MixColumns step this way as well. This is largely a design flaw in the AES implementation as it was
+not realized during the NIST standardization process that table lookups can lead to security
+problems [1]. The issue is that not all table lookups occur in constant time - an address that was
+recently used is looked up much faster than one that hasn't been used in a while. A careful
+adversary can measure the amount of time that each AES operation takes and use that information to
+help determine the secret key or plain text information. More specifically, its not table lookups
+that lead to these types of timing attacks - the issue is table lookups that use secret information
+as part of the address to lookup. A table lookup that is performed the exact same way every time
+regardless of the key or plaintext doesn't leak any information. There are various ways to protect
+against these types of timing attacks ([1], [2], and [3]), but they basically all fall into three
+categories:
+
+* 1. Do nothing to prevent timing attacks
+* 2. Try to obfuscate table accesses to make it harder for an adversary to use timing information
+* 3. Avoid all table accesses and timing dependant instructions
+
+Many common implementations use #1 (Bouncy Castle) or #2 (OpenSSL). As of the time of writing, there
+are no publicly available attacks against OpenSSL, although the literature seems to indicate that
+while implementations such as OpenSSL may have patched themselves against the last round of timing
+attacks, there will likely be more in the future. This implementation intentionally avoids joining
+in this arms race - it uses strategy #3.
+
+## Bit Splicing
+
+Bit Splicing is a technique that is basically a software emulation of hardware implementation
+techniques. One of the earliest implementations of this technique was for a DES implementation [4].
+In hardware, table lookups do not present the same timing problems as they do in software, however
+they present other problems - namely that a 256 byte S-box table takes up a huge amount of space on
+a chip. Hardware implementations, thus, tend to avoid table lookups and instead calculate the
+contents of the S-Boxes as part of every operation. So, the key to an efficient Bit Sliced software
+implementation is to re-arrange all of the bits of data to process into a form that can easily be
+applied in much the same way that it would be in hardeware. It is fortunate, that AES was designed
+such that these types of hardware implementations could be very efficient - the contents of the
+S-boxes are defined by a mathematical formula.
+
+A hardware implementation works on single bits at a time. Unlike adding variables in software,
+however, that occur generally one at a time, hardware implementations are extremely parallel and
+operate on many, many bits at once. Bit Splicing emulates that by moving all "equivalent" bits into
+common registers and then operating on large groups of bits all at once. Calculating the S-box value
+for a single bit is extremely expensive, but its much cheaper when you can amortize that cost over
+128 bits (as in an XMM register). This implementation follows the same strategy as in [5] and that
+is an excellent source for more specific details. However, a short description follows.
+
+The input data is simply a collection of bytes. Each byte is comprised of 8 bits, a low order bit
+(bit 0) through a high order bit (bit 7). Bit splicing the input data simply takes all of the low
+order bits (bit 0) from the input data, and moves them into a single register (eg: XMM0). Next, all
+of them 2nd lowest bits are moved into their own register (eg: XMM1), and so on. After completion,
+we're left with 8 variables, each of which contains an equivalent set of bits. The exact order of
+those bits is irrevent for the implementation of the SubBytes step, however, it is very important
+for the MixColumns step. Again, see [5] for details. Due to the design of AES, its them possible to
+execute the entire AES operation using just bitwise exclusive ors and rotates once we have Bit
+Sliced the input data. After the completion of the AES operation, we then un-Bit Slice the data
+to give us our output. Clearly, the more bits that we can process at once, the faster this will go -
+thus, the version that processes 8 blocks at once is roughly 8 times faster than processing just a
+single block at a time.
+
+The ShiftRows step is fairly straight-forward to implement on the Bit Sliced state. The MixColumns
+and especially the SubBytes steps are more complicated. This implementation draws heavily on the
+formulas from [5], [6], and [7] to implement these steps.
+
+## Implementation
+
+Both implementations work basically the same way and share pretty much all of their code. The key
+is first processed to create all of the round keys where each round key is just a 16 byte chunk of
+data that is combined into the AES state by the AddRoundKey step as part of each encryption or
+decryption round. Processing the round key can be expensive, so this is done before encryption or
+decryption. Before encrypting or decrypting data, the data to be processed by be Bit Sliced into 8
+seperate variables where each variable holds equivalent bytes from the state. This Bit Sliced state
+is stored as a Bs8State<T>, where T is the type that stores each set of bits. The first
+implementation stores these bits in a u32 which permits up to 8 * 32 = 1024 bits of data to be
+processed at once. This implementation only processes a single block at a time, so, in reality, only
+512 bits are processed at once and the remaining 512 bits of the variables are unused. The 2nd
+implementation uses u32x4s - vectors of 4 u32s. Thus, we can process 8 * 128 = 4096 bits at once,
+which corresponds exactly to 8 blocks.
+
+The Bs8State struct implements the AesOps trait, which contains methods for each of the 4 main steps
+of the AES algorithm. The types, T, each implement the AesBitValueOps trait, which containts methods
+necessary for processing a collection or bit values and the AesOps trait relies heavily on this
+trait to perform its operations.
+
+The Bs4State and Bs2State struct implement operations of various subfields of the full GF(2^8)
+finite field which allows for efficient computation of the AES S-Boxes. See [7] for details.
+
+[1] - Cache-Collision Timing Attacks Against AES
+[2] - Software mitigations to hedge AES against cache-based software side channel vulnerabilities
+[3] - Cache Attacks and Countermeasures: the Case of AES (Extended Version)
+[4] - A Fast New DES Implementation in Software
+[5] - Faster and Timing-Attack Resistant AES-GCM
+[6] - http://webcache.googleusercontent.com/search?q=cache:ld_f8pSgURcJ:csus-dspace.calstate.edu/bitstream/handle/10211.9/1224/Vinit_Azad_MS_Report.doc%3Fsequence%3D2+&cd=4&hl=en&ct=clnk&gl=us&client=ubuntu
+[7] - A Very Compact Rijndael S-box
+
+*/
+
 use std::num::Zero;
 use std::uint;
 
@@ -15,11 +136,15 @@ use cryptoutil::*;
 use symmetriccipher::*;
 
 
+// FIXME - #XXXX: Using std::unstable::simd::u32x4 results in issues creating static arrays of u32x4
+// values. Defining the type here avoids that problem.
 #[simd]
 #[deriving(Clone, Eq)]
 pub struct u32x4(u32, u32, u32, u32);
 
 
+// There are a variety of places where we need to use u32x4 types with either all bits set or not
+// bits set. These macros make that more succinct.
 macro_rules! o( () => ( u32x4(0, 0, 0, 0) ) )
 macro_rules! x( () => ( u32x4(-1, -1, -1, -1) ) )
 
@@ -50,7 +175,7 @@ macro_rules! define_aes_impl(
                 let mut tmp = [[0u32, ..4], ..$rounds + 1];
                 create_round_keys(key, $mode, tmp);
                 for i in range(0, $rounds + 1) {
-                    a.sk[i] = bit_splice_4x4_with_u32(tmp[i][0], tmp[i][1], tmp[i][2], tmp[i][3]);
+                    a.sk[i] = bit_slice_4x4_with_u32(tmp[i][0], tmp[i][1], tmp[i][2], tmp[i][3]);
                 }
                 return a;
             }
@@ -65,9 +190,9 @@ macro_rules! define_aes_enc(
     ) => (
         impl BlockEncryptor for $name {
             fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
-                let mut bs = bit_splice_1x16_with_u32(input);
+                let mut bs = bit_slice_1x16_with_u32(input);
                 bs = encrypt_core(&bs, self.sk);
-                un_bit_splice_1x16_with_u32(&bs, output);
+                un_bit_slice_1x16_with_u32(&bs, output);
             }
         }
     )
@@ -80,9 +205,9 @@ macro_rules! define_aes_dec(
     ) => (
         impl BlockDecryptor for $name {
             fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
-                let mut bs = bit_splice_1x16_with_u32(input);
+                let mut bs = bit_slice_1x16_with_u32(input);
                 bs = decrypt_core(&bs, self.sk);
-                un_bit_splice_1x16_with_u32(&bs, output);
+                un_bit_slice_1x16_with_u32(&bs, output);
             }
         }
     )
@@ -136,7 +261,7 @@ macro_rules! define_aes_impl_x8(
                 let mut tmp = [[0u32, ..4], ..$rounds + 1];
                 create_round_keys(key, $mode, tmp);
                 for i in range(0, $rounds + 1) {
-                    a.sk[i] = bit_splice_fill_4x4_with_int128(
+                    a.sk[i] = bit_slice_fill_4x4_with_u32x4(
                         tmp[i][0],
                         tmp[i][1],
                         tmp[i][2],
@@ -155,9 +280,9 @@ macro_rules! define_aes_enc_x8(
     ) => (
         impl BlockEncryptor for $name {
             fn encrypt_block(&self, input: &[u8], output: &mut [u8]) {
-                let bs = bit_splice_1x128_with_int128(input);
+                let bs = bit_slice_1x128_with_u32x4(input);
                 let bs2 = encrypt_core(&bs, self.sk);
-                un_bit_splice_1x128_with_int128(&bs2, output);
+                un_bit_slice_1x128_with_u32x4(&bs2, output);
             }
         }
     )
@@ -170,9 +295,9 @@ macro_rules! define_aes_dec_x8(
     ) => (
         impl BlockDecryptor for $name {
             fn decrypt_block(&self, input: &[u8], output: &mut [u8]) {
-                let bs = bit_splice_1x128_with_int128(input);
+                let bs = bit_slice_1x128_with_u32x4(input);
                 let bs2 = decrypt_core(&bs, self.sk);
-                un_bit_splice_1x128_with_int128(&bs2, output);
+                un_bit_slice_1x128_with_u32x4(&bs2, output);
             }
         }
     )
@@ -221,8 +346,8 @@ fn inv_mcol(x: u32) -> u32 {
 }
 
 fn sub_word(x: u32) -> u32 {
-    let bs = bit_splice_4x1_with_u32(x).sub_bytes();
-    return un_bit_splice_4x1_with_u32(&bs);
+    let bs = bit_slice_4x1_with_u32(x).sub_bytes();
+    return un_bit_slice_4x1_with_u32(&bs);
 }
 
 enum KeyType {
@@ -230,8 +355,12 @@ enum KeyType {
     Decryption
 }
 
+// This array is not accessed in any key-dependant way, so there are no timing problems inherent in
+// using it.
 static RCON: [u32, ..10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
 
+// The round keys are created without bit-splicing the key data. The individual implementations bit
+// slice the round keys returned from this method.
 fn create_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]) {
     let (key_words, rounds) = match key.len() {
         16 => (4, 10u),
@@ -278,6 +407,8 @@ fn create_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]
 }
 
 
+// This trait defines all of the operations needed for a type to be processed as part of an AES
+// encryption or decryption operation.
 trait AesOps {
     fn sub_bytes(&self) -> Self;
     fn inv_sub_bytes(&self) -> Self;
@@ -399,11 +530,13 @@ impl <T: BitXor<T, T>> Bs2State<T> {
 }
 
 
+// Pick the specified bit from the value x and shift it left by the specified amount.
 fn pb(x: u32, bit: uint, shift: uint) -> u32 {
     ((x >> bit) & 1) << shift
 }
 
-fn bit_splice_4x4_with_u32(a: u32, b: u32, c: u32, d: u32) -> Bs8State<u32> {
+// Bit Slice data in the form of 4 u32s in column-major order
+fn bit_slice_4x4_with_u32(a: u32, b: u32, c: u32, d: u32) -> Bs8State<u32> {
     fn construct(a: u32, b: u32, c: u32, d: u32, bit: uint) -> u32 {
         pb(a, bit, 0)       | pb(b, bit, 1)       | pb(c, bit, 2)       | pb(d, bit, 3)       |
         pb(a, bit + 8, 4)   | pb(b, bit + 8, 5)   | pb(c, bit + 8, 6)   | pb(d, bit + 8, 7)   |
@@ -423,11 +556,14 @@ fn bit_splice_4x4_with_u32(a: u32, b: u32, c: u32, d: u32) -> Bs8State<u32> {
     return Bs8State(x0, x1, x2, x3, x4, x5, x6, x7);
 }
 
-fn bit_splice_4x1_with_u32(a: u32) -> Bs8State<u32> {
-    return bit_splice_4x4_with_u32(a, 0, 0, 0);
+// Bit slice a single u32 value - this is used to calculate the SubBytes step when creating the
+// round keys.
+fn bit_slice_4x1_with_u32(a: u32) -> Bs8State<u32> {
+    return bit_slice_4x4_with_u32(a, 0, 0, 0);
 }
 
-fn bit_splice_1x16_with_u32(data: &[u8]) -> Bs8State<u32> {
+// Bit slice a 16 byte array in column major order
+fn bit_slice_1x16_with_u32(data: &[u8]) -> Bs8State<u32> {
     let mut n = [0u32, ..4];
     read_u32v_le(n, data);
 
@@ -436,10 +572,11 @@ fn bit_splice_1x16_with_u32(data: &[u8]) -> Bs8State<u32> {
     let c = n[2];
     let d = n[3];
 
-    return bit_splice_4x4_with_u32(a, b, c, d);
+    return bit_slice_4x4_with_u32(a, b, c, d);
 }
 
-fn un_bit_splice_4x4_with_u32(bs: &Bs8State<u32>) -> (u32, u32, u32, u32) {
+// Un Bit Slice into a set of 4 u32s
+fn un_bit_slice_4x4_with_u32(bs: &Bs8State<u32>) -> (u32, u32, u32, u32) {
     fn deconstruct(bs: &Bs8State<u32>, bit: uint) -> u32 {
         let Bs8State(x0, x1, x2, x3, x4, x5, x6, x7) = *bs;
 
@@ -464,13 +601,15 @@ fn un_bit_splice_4x4_with_u32(bs: &Bs8State<u32>) -> (u32, u32, u32, u32) {
     return (a, b, c, d);
 }
 
-fn un_bit_splice_4x1_with_u32(bs: &Bs8State<u32>) -> u32 {
-    let (a, _, _, _) = un_bit_splice_4x4_with_u32(bs);
+// Un Bit Slice into a single u32. This is used when creating the round keys.
+fn un_bit_slice_4x1_with_u32(bs: &Bs8State<u32>) -> u32 {
+    let (a, _, _, _) = un_bit_slice_4x4_with_u32(bs);
     return a;
 }
 
-fn un_bit_splice_1x16_with_u32(bs: &Bs8State<u32>, output: &mut [u8]) {
-    let (a, b, c, d) = un_bit_splice_4x4_with_u32(bs);
+// Un Bit Slice into a 16 byte array
+fn un_bit_slice_1x16_with_u32(bs: &Bs8State<u32>, output: &mut [u8]) {
+    let (a, b, c, d) = un_bit_slice_4x4_with_u32(bs);
 
     write_u32_le(output.mut_slice(0, 4), a);
     write_u32_le(output.mut_slice(4, 8), b);
@@ -478,7 +617,8 @@ fn un_bit_splice_1x16_with_u32(bs: &Bs8State<u32>, output: &mut [u8]) {
     write_u32_le(output.mut_slice(12, 16), d);
 }
 
-fn bit_splice_1x128_with_int128(data: &[u8]) -> Bs8State<u32x4> {
+// Bit Slice a 128 byte array of eight 16 byte blocks. Each block is in column major order.
+fn bit_slice_1x128_with_u32x4(data: &[u8]) -> Bs8State<u32x4> {
     fn read_row_major(data: &[u8]) -> u32x4 {
         return u32x4(
             (data[0] as u32) |
@@ -537,7 +677,9 @@ fn bit_splice_1x128_with_int128(data: &[u8]) -> Bs8State<u32x4> {
     return Bs8State(x0, x1, x2, x3, x4, x5, x6, x7);
 }
 
-fn bit_splice_fill_4x4_with_int128(a: u32, b: u32, c: u32, d: u32) -> Bs8State<u32x4> {
+// Bit slice a set of 4 u32s by filling a full 128 byte data block with those repeated values. This
+// is used as part of bit slicing the round keys.
+fn bit_slice_fill_4x4_with_u32x4(a: u32, b: u32, c: u32, d: u32) -> Bs8State<u32x4> {
     let mut tmp = [0u8, ..128];
     for i in range(0u, 8) {
         write_u32_le(tmp.mut_slice(i * 16, i * 16 + 4), a);
@@ -545,10 +687,11 @@ fn bit_splice_fill_4x4_with_int128(a: u32, b: u32, c: u32, d: u32) -> Bs8State<u
         write_u32_le(tmp.mut_slice(i * 16 + 8, i * 16 + 12), c);
         write_u32_le(tmp.mut_slice(i * 16 + 12, i * 16 + 16), d);
     }
-    return bit_splice_1x128_with_int128(tmp);
+    return bit_slice_1x128_with_u32x4(tmp);
 }
 
-fn un_bit_splice_1x128_with_int128(bs: &Bs8State<u32x4>, output: &mut [u8]) {
+// Un bit slice into a 128 byte buffer.
+fn un_bit_slice_1x128_with_u32x4(bs: &Bs8State<u32x4>, output: &mut [u8]) {
     let Bs8State(t0, t1, t2, t3, t4, t5, t6, t7) = *bs;
 
     let bit0 = u32x4(0x01010101, 0x01010101, 0x01010101, 0x01010101);
@@ -561,7 +704,7 @@ fn un_bit_splice_1x128_with_int128(bs: &Bs8State<u32x4>, output: &mut [u8]) {
     let bit7 = u32x4(0x80808080, 0x80808080, 0x80808080, 0x80808080);
 
     // decode the individual blocks, in row-major order
-    // TODO: this is identical to the same block in bit_splice_1x128_with_int128
+    // TODO: this is identical to the same block in bit_slice_1x128_with_u32x4
     let x0 = (t0 & bit0) | (t1.lsh(1) & bit1) | (t2.lsh(2) & bit2) | (t3.lsh(3) & bit3) |
         (t4.lsh(4) & bit4) | (t5.lsh(5) & bit5) | (t6.lsh(6) & bit6) | (t7.lsh(7) & bit7);
     let x1 = (t0.rsh(1) & bit0) | (t1 & bit1) | (t2.lsh(1) & bit2) | (t3.lsh(2) & bit3) |
@@ -610,8 +753,25 @@ fn un_bit_splice_1x128_with_int128(bs: &Bs8State<u32x4>, output: &mut [u8]) {
 }
 
 
-impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs2State<T> {
-    // multiply in GF(2^2), using normal basis (Omega^2,Omega)
+// Operations in GF(2^2) using normal basis (Omega^2,Omega)
+trait Gf2Ops {
+    // multiply
+    fn mul(&self, y: &Self) -> Self;
+
+    // scale by N = Omega^2
+    fn scl_n(&self) -> Self;
+
+    // scale by N^2 = Omega
+    fn scl_n2(&self) -> Self;
+
+    // square
+    fn sq(&self) -> Self;
+
+    // Same as sqaure
+    fn inv(&self) -> Self;
+}
+
+impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Gf2Ops for Bs2State<T> {
     fn mul(&self, y: &Bs2State<T>) -> Bs2State<T> {
         let (b, a) = self.split();
         let (d, c) = y.split();
@@ -621,14 +781,12 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs2State<T> {
         return Bs2State(q, p);
     }
 
-    // scale by N = Omega^2 in GF(2^2), using normal basis (Omega^2,Omega)
     fn scl_n(&self) -> Bs2State<T> {
         let (b, a) = self.split();
         let q = a ^ b;
         return Bs2State(q, b);
     }
 
-    // scale by N^2 = Omega in GF(2^2), using normal basis (Omega^2,Omega)
     fn scl_n2(&self) -> Bs2State<T> {
         let (b, a) = self.split();
         let p = a ^ b;
@@ -636,22 +794,31 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs2State<T> {
         return Bs2State(q, p);
     }
 
-    // square in GF(2^2), using normal basis (Omega^2,Omega)
-    // NOTE: inverse is identical
     fn sq(&self) -> Bs2State<T> {
         let (b, a) = self.split();
         return Bs2State(a, b);
     }
 
     fn inv(&self) -> Bs2State<T> {
-        // Same as sqaure
         return self.sq();
     }
 }
 
 
-impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs4State<T> {
-    // multiply in GF(2^4), using normal basis (alpha^8,alpha^2)
+// Operations in GF(2^4) using normal basis (alpha^8,alpha^2)
+trait Gf4Ops {
+    // multiply
+    fn mul(&self, y: &Self) -> Self;
+
+    // square & scale by nu
+    // nu = beta^8 = N^2*alpha^2, N = w^2
+    fn sq_scl(&self) -> Self;
+
+    // inverse
+    fn inv(&self) -> Self;
+}
+
+impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Gf4Ops for Bs4State<T> {
     fn mul(&self, y: &Bs4State<T>) -> Bs4State<T> {
         let (b, a) = self.split();
         let (d, c) = y.split();
@@ -662,8 +829,6 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs4State<T> {
         return q.join(&p);
     }
 
-    // square & scale by nu in GF(2^4)/GF(2^2), normal basis (alpha^8,alpha^2)
-    // nu = beta^8 = N^2*alpha^2, N = w^2
     fn sq_scl(&self) -> Bs4State<T> {
         let (b, a) = self.split();
         let p = a.xor(&b).sq();
@@ -671,7 +836,6 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs4State<T> {
         return q.join(&p);
     }
 
-    // inverse in GF(2^4), using normal basis (alpha^8,alpha^2)
     fn inv(&self) -> Bs4State<T> {
         let (b, a) = self.split();
         let c = a.xor(&b).sq().scl_n();
@@ -684,8 +848,16 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone> Bs4State<T> {
 }
 
 
-impl <T: BitXor<T, T> + BitAnd<T, T> + Clone + Zero> Bs8State<T> {
-    // inverse in GF(2^8), using normal basis (d^16,d)
+// Operations in GF(2^8) using normal basis (d^16,d)
+trait Gf8Ops<T> {
+    // inverse
+    fn inv(&self) -> Self;
+
+    // change the basis using the provided array
+    fn change_basis(&self, arr: &[[T, ..8], ..8]) -> Self;
+}
+
+impl <T: BitXor<T, T> + BitAnd<T, T> + Clone + Zero> Gf8Ops<T> for Bs8State<T> {
     fn inv(&self) -> Bs8State<T> {
         let (b, a) = self.split();
         let c = a.xor(&b).sq_scl();
@@ -696,7 +868,7 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone + Zero> Bs8State<T> {
         return q.join(&p);
     }
 
-    fn change_basis(&self, arr: &'static [[T, ..8], ..8]) -> Bs8State<T> {
+    fn change_basis(&self, arr: &[[T, ..8], ..8]) -> Bs8State<T> {
         let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
 
         let mut x0_out: T = Zero::zero();
@@ -812,23 +984,21 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone + Zero> Bs8State<T> {
 }
 
 
-impl <T: AesRowTypeOps> AesOps for Bs8State<T> {
-    // find Sbox of n in GF(2^8) mod POLY
+impl <T: AesBitValueOps> AesOps for Bs8State<T> {
     fn sub_bytes(&self) -> Bs8State<T> {
-        let nb = self.change_basis(AesRowTypeOps::a2x::<T>());
+        let nb = self.change_basis(AesBitValueOps::a2x::<T>());
         let inv = nb.inv();
-        let nb2 = inv.change_basis(AesRowTypeOps::x2s::<T>());
-        let x63 = AesRowTypeOps::x63::<T>();
+        let nb2 = inv.change_basis(AesBitValueOps::x2s::<T>());
+        let x63 = AesBitValueOps::x63::<T>();
         return nb2.xor(&x63);
     }
 
-    // find inverse Sbox of n in GF(2^8) mod POLY
     fn inv_sub_bytes(&self) -> Bs8State<T> {
-        let x63 = AesRowTypeOps::x63::<T>();
+        let x63 = AesBitValueOps::x63::<T>();
         let t = self.xor(&x63);
-        let nb = t.change_basis(AesRowTypeOps::s2x::<T>());
+        let nb = t.change_basis(AesBitValueOps::s2x::<T>());
         let inv = nb.inv();
-        let nb2 = inv.change_basis(AesRowTypeOps::x2a::<T>());
+        let nb2 = inv.change_basis(AesBitValueOps::x2a::<T>());
         return nb2;
     }
 
@@ -918,7 +1088,7 @@ impl <T: AesRowTypeOps> AesOps for Bs8State<T> {
 }
 
 
-trait AesRowTypeOps: BitXor<Self, Self> + BitAnd<Self, Self> + Clone + Zero {
+trait AesBitValueOps: BitXor<Self, Self> + BitAnd<Self, Self> + Clone + Zero {
     fn a2x() -> &'static [[Self, ..8], ..8];
     fn x2s() -> &'static [[Self, ..8], ..8];
     fn s2x() -> &'static [[Self, ..8], ..8];
@@ -933,8 +1103,8 @@ trait AesRowTypeOps: BitXor<Self, Self> + BitAnd<Self, Self> + Clone + Zero {
 }
 
 
-// to convert between polynomial (A^7...1) basis A & normal basis X
-// or to basis S which incorporates bit matrix of Sbox
+// Arrays to convert to and from a polynomial basis and a normal basis. The affine transformation
+// step is included in these matrices as well, so that doesn't have to be done seperately.
 static A2X_u32: [[u32, ..8], ..8] = [
     [ 0,  0,  0, -1, -1,  0,  0, -1],
     [-1, -1,  0,  0, -1, -1, -1, -1],
@@ -979,7 +1149,7 @@ static S2X_u32: [[u32, ..8], ..8] = [
     [-1, -1,  0,  0, -1,  0, -1,  0],
 ];
 
-impl AesRowTypeOps for u32 {
+impl AesBitValueOps for u32 {
     fn a2x() -> &'static [[u32, ..8], ..8] { &A2X_u32 }
     fn x2s() -> &'static [[u32, ..8], ..8] { &X2S_u32 }
     fn s2x() -> &'static [[u32, ..8], ..8] { &S2X_u32 }
@@ -1035,9 +1205,9 @@ impl u32x4 {
     fn rsh(&self, s: uint) -> u32x4 {
         let u32x4(a0, a1, a2, a3) = *self;
         return u32x4(
-            (a0 >> s) | (a1 << (32 -s)),
-            (a1 >> s) | (a2 << (32 -s)),
-            (a2 >> s) | (a3 << (32 -s)),
+            (a0 >> s) | (a1 << (32 - s)),
+            (a1 >> s) | (a2 << (32 - s)),
+            (a2 >> s) | (a3 << (32 - s)),
             a3 >> s);
     }
 }
@@ -1064,7 +1234,9 @@ impl Zero for u32x4 {
     }
 }
 
-static a2x_int128: [[u32x4, ..8], ..8] = [
+// Arrays to convert to and from a polynomial basis and a normal basis. The affine transformation
+// step is included in these matrices as well, so that doesn't have to be done seperately.
+static a2x_u32x4: [[u32x4, ..8], ..8] = [
     [o!(), o!(), o!(), x!(), x!(), o!(), o!(), x!()],
     [x!(), x!(), o!(), o!(), x!(), x!(), x!(), x!()],
     [o!(), x!(), o!(), o!(), x!(), x!(), x!(), x!()],
@@ -1075,7 +1247,7 @@ static a2x_int128: [[u32x4, ..8], ..8] = [
     [x!(), x!(), x!(), x!(), x!(), x!(), x!(), x!()]
 ];
 
-static x2a_int128: [[u32x4, ..8], ..8] = [
+static x2a_u32x4: [[u32x4, ..8], ..8] = [
     [o!(), o!(), x!(), o!(), o!(), x!(), x!(), o!()],
     [o!(), o!(), o!(), x!(), x!(), x!(), x!(), o!()],
     [o!(), x!(), x!(), x!(), o!(), x!(), x!(), o!()],
@@ -1086,7 +1258,7 @@ static x2a_int128: [[u32x4, ..8], ..8] = [
     [o!(), o!(), o!(), o!(), o!(), x!(), x!(), o!()],
 ];
 
-static x2s_int128: [[u32x4, ..8], ..8] = [
+static x2s_u32x4: [[u32x4, ..8], ..8] = [
     [o!(), o!(), o!(), x!(), x!(), o!(), x!(), o!()],
     [x!(), o!(), x!(), x!(), o!(), x!(), o!(), o!()],
     [o!(), x!(), x!(), x!(), x!(), o!(), o!(), x!()],
@@ -1097,7 +1269,7 @@ static x2s_int128: [[u32x4, ..8], ..8] = [
     [o!(), o!(), x!(), o!(), o!(), x!(), o!(), o!()],
 ];
 
-static s2x_int128: [[u32x4, ..8], ..8] = [
+static s2x_u32x4: [[u32x4, ..8], ..8] = [
     [o!(), o!(), x!(), x!(), o!(), o!(), o!(), x!()],
     [x!(), o!(), o!(), x!(), x!(), x!(), x!(), o!()],
     [x!(), o!(), x!(), o!(), o!(), o!(), o!(), o!()],
@@ -1108,11 +1280,11 @@ static s2x_int128: [[u32x4, ..8], ..8] = [
     [x!(), x!(), o!(), o!(), x!(), o!(), x!(), o!()],
 ];
 
-impl AesRowTypeOps for u32x4 {
-    fn a2x() -> &'static [[u32x4, ..8], ..8] { &a2x_int128 }
-    fn x2s() -> &'static [[u32x4, ..8], ..8] { &x2s_int128 }
-    fn s2x() -> &'static [[u32x4, ..8], ..8] { &s2x_int128 }
-    fn x2a() -> &'static [[u32x4, ..8], ..8] { &x2a_int128 }
+impl AesBitValueOps for u32x4 {
+    fn a2x() -> &'static [[u32x4, ..8], ..8] { &a2x_u32x4 }
+    fn x2s() -> &'static [[u32x4, ..8], ..8] { &x2s_u32x4 }
+    fn s2x() -> &'static [[u32x4, ..8], ..8] { &s2x_u32x4 }
+    fn x2a() -> &'static [[u32x4, ..8], ..8] { &x2a_u32x4 }
     fn x63() -> Bs8State<u32x4> { Bs8State(x!(), x!(), o!(), o!(), o!(), x!(), x!(), o!()) }
 
     fn shift_row(&self) -> u32x4 {
