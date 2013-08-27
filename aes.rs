@@ -641,6 +641,7 @@ mod bench {
             a.decrypt_block(plain, tmp);
         }
 
+        // HACK: Multiply by 100 to get fractional MB/s reported
         bh.bytes = (plain.len() * 100) as u64;
     }
 }

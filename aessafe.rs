@@ -22,7 +22,7 @@ x86 processors.
 ## AES Algorithm
 
 There are lots of places to go to on the internet for an involved description of how AES works. For
-the purposes of this description, it sufficies to say that AES is just a block encryptor that takes
+the purposes of this description, it sufficies to say that AES is just a block cipher that takes
 a key of 16, 24, or 32 bytes and uses that to either encrypt or decrypt a block of 16 bytes. An
 encryption or decryption operation consists of a number of rounds which involve some combination of
 the following 4 basic operations:
@@ -52,11 +52,11 @@ categories:
 * 2. Try to obfuscate table accesses to make it harder for an adversary to use timing information
 * 3. Avoid all table accesses and timing dependant instructions
 
-Many common implementations use #1 (Bouncy Castle) or #2 (OpenSSL). As of the time of writing, there
-are no publicly available attacks against OpenSSL, although the literature seems to indicate that
-while implementations such as OpenSSL may have patched themselves against the last round of timing
-attacks, there will likely be more in the future. This implementation intentionally avoids joining
-in this arms race - it uses strategy #3.
+Many common implementations use #1 (BouncyCastle) or #2 (OpenSSL). As of the time of writing, all
+publically known timing attacks appear to have been addressed, though the literature seems to
+indicate that while implementations such as OpenSSL may have patched themselves against the last
+round of timing attacks, there will likely be more in the future. This implementation intentionally
+avoids joining in this arms race - it uses strategy #3.
 
 ## Bit Splicing
 
@@ -118,6 +118,8 @@ trait to perform its operations.
 
 The Bs4State and Bs2State struct implement operations of various subfields of the full GF(2^8)
 finite field which allows for efficient computation of the AES S-Boxes. See [7] for details.
+
+## References
 
 [1] - Cache-Collision Timing Attacks Against AES
 [2] - Software mitigations to hedge AES against cache-based software side channel vulnerabilities
@@ -360,7 +362,7 @@ enum KeyType {
 static RCON: [u32, ..10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
 
 // The round keys are created without bit-splicing the key data. The individual implementations bit
-// slice the round keys returned from this method. This method, and the few methods above, are
+// slice the round keys returned from this function. This function, and the few functions above, are
 // derived from the BouncyCastle AES implementation.
 fn create_round_keys(key: &[u8], key_type: KeyType, round_keys: &mut [[u32, ..4]]) {
     let (key_words, rounds) = match key.len() {
@@ -1053,37 +1055,37 @@ impl <T: AesBitValueOps> AesOps for Bs8State<T> {
         let Bs8State(ref x0, ref x1, ref x2, ref x3, ref x4, ref x5, ref x6, ref x7) = *self;
 
         let x0out = *x5 ^ *x6 ^ *x7 ^
-            x5.ror1() ^ x7.ror1() ^ x0.ror1() ^
-            x0.ror2() ^ x5.ror2() ^ x6.ror2() ^
-            x5.ror3() ^ x0.ror3();
+            (*x5 ^ *x7 ^ *x0).ror1() ^
+            (*x0 ^ *x5 ^ *x6).ror2() ^
+            (*x5 ^ *x0).ror3();
         let x1out = *x5 ^ *x0 ^
-            x6.ror1() ^ x5.ror1() ^ x0.ror1() ^ x7.ror1() ^ x1.ror1() ^
-            x1.ror2() ^ x7.ror2() ^ x5.ror2() ^
-            x6.ror3() ^ x5.ror3() ^ x1.ror3();
+            (*x6 ^ *x5 ^ *x0 ^ *x7 ^ *x1).ror1() ^
+            (*x1 ^ *x7 ^ *x5).ror2() ^
+            (*x6 ^ *x5 ^ *x1).ror3();
         let x2out = *x6 ^ *x0 ^ *x1 ^
-            x7.ror1() ^ x6.ror1() ^ x1.ror1() ^ x2.ror1() ^
-            x0.ror2() ^ x2.ror2() ^ x6.ror2() ^
-            x7.ror3() ^ x6.ror3() ^ x2.ror3();
+            (*x7 ^ *x6 ^ *x1 ^ *x2).ror1() ^
+            (*x0 ^ *x2 ^ *x6).ror2() ^
+            (*x7 ^ *x6 ^ *x2).ror3();
         let x3out = *x0 ^ *x5 ^ *x1 ^ *x6 ^ *x2 ^
-            x0.ror1() ^ x5.ror1() ^ x2.ror1() ^ x3.ror1() ^
-            x0.ror2() ^ x1.ror2() ^ x3.ror2() ^ x5.ror2() ^ x6.ror2() ^ x7.ror2() ^
-            x0.ror3() ^ x5.ror3() ^ x7.ror3() ^ x3.ror3();
+            (*x0 ^ *x5 ^ *x2 ^ *x3).ror1() ^
+            (*x0 ^ *x1 ^ *x3 ^ *x5 ^ *x6 ^ *x7).ror2() ^
+            (*x0 ^ *x5 ^ *x7 ^ *x3).ror3();
         let x4out = *x1 ^ *x5 ^ *x2 ^ *x3 ^
-            x1.ror1() ^ x6.ror1() ^ x5.ror1() ^ x3.ror1() ^ x7.ror1() ^ x4.ror1() ^
-            x1.ror2() ^ x2.ror2() ^ x4.ror2() ^ x5.ror2() ^ x7.ror2() ^
-            x1.ror3() ^ x5.ror3() ^ x6.ror3() ^ x4.ror3();
+            (*x1 ^ *x6 ^ *x5 ^ *x3 ^ *x7 ^ *x4).ror1() ^
+            (*x1 ^ *x2 ^ *x4 ^ *x5 ^ *x7).ror2() ^
+            (*x1 ^ *x5 ^ *x6 ^ *x4).ror3();
         let x5out = *x2 ^ *x6 ^ *x3 ^ *x4 ^
-            x2.ror1() ^ x7.ror1() ^ x6.ror1() ^ x4.ror1() ^ x5.ror1() ^
-            x2.ror2() ^ x3.ror2() ^ x5.ror2() ^ x6.ror2() ^
-            x2.ror3() ^ x6.ror3() ^ x7.ror3() ^ x5.ror3();
+            (*x2 ^ *x7 ^ *x6 ^ *x4 ^ *x5).ror1() ^
+            (*x2 ^ *x3 ^ *x5 ^ *x6).ror2() ^
+            (*x2 ^ *x6 ^ *x7 ^ *x5).ror3();
         let x6out =  *x3 ^ *x7 ^ *x4 ^ *x5 ^
-            x3.ror1() ^ x7.ror1() ^ x5.ror1() ^ x6.ror1() ^
-            x3.ror2() ^ x4.ror2() ^ x6.ror2() ^ x7.ror2() ^
-            x3.ror3() ^ x7.ror3() ^ x6.ror3();
+            (*x3 ^ *x7 ^ *x5 ^ *x6).ror1() ^
+            (*x3 ^ *x4 ^ *x6 ^ *x7).ror2() ^
+            (*x3 ^ *x7 ^ *x6).ror3();
         let x7out = *x4 ^ *x5 ^ *x6 ^
-            x4.ror1() ^ x6.ror1() ^ x7.ror1() ^
-            x4.ror2() ^ x5.ror2() ^ x7.ror2() ^
-            x4.ror3() ^ x7.ror3();
+            (*x4 ^ *x6 ^ *x7).ror1() ^
+            (*x4 ^ *x5 ^ *x7).ror2() ^
+            (*x4 ^ *x7).ror3();
 
         Bs8State(x0out, x1out, x2out, x3out, x4out, x5out, x6out, x7out)
     }
