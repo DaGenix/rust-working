@@ -147,35 +147,6 @@ pub fn shift_add_check_overflow_tuple
 }
 
 
-pub trait FixedEq {
-    /// returns 1 if self == x, 0 otherwise
-    fn fixed_eq(self, x: Self) -> Self;
-}
-
-impl FixedEq for u8 {
-    fn fixed_eq(self, x: u8) -> u8 {
-        let mut z = !(self ^ x);
-        z &= z >> 4;
-        z &= z >> 2;
-        z &= z >> 1;
-        return z;
-    }
-}
-
-pub trait FixedSelect<S> {
-    /// if self is 1, returns x; if self is 0, returns y
-    fn fixed_select(self, x: S, y: S) -> S;
-}
-
-impl <T: Int, S: Int> FixedSelect<S> for T {
-    fn fixed_select(self, x: S, y: S) -> S {
-        let z = NumCast::from::<S, T>(self);
-        let one: S = One::one();
-        return !(z - one) & x | (z - one) & y;
-    }
-}
-
-
 /// A FixedBuffer, likes its name implies, is a fixed size buffer. When the buffer becomes full, it
 /// must be processed. The input() method takes care of processing and then clearing the buffer
 /// automatically. However, other methods do not and require the caller to process the buffer. Any

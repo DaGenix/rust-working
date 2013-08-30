@@ -993,19 +993,19 @@ impl <T: BitXor<T, T> + BitAnd<T, T> + Clone + Zero> Gf8Ops<T> for Bs8State<T> {
 
 impl <T: AesBitValueOps> AesOps for Bs8State<T> {
     fn sub_bytes(&self) -> Bs8State<T> {
-        let nb = self.change_basis(AesBitValueOps::a2x::<T>());
+        let nb: Bs8State<T> = self.change_basis(AesBitValueOps::a2x());
         let inv = nb.inv();
-        let nb2 = inv.change_basis(AesBitValueOps::x2s::<T>());
-        let x63 = AesBitValueOps::x63::<T>();
+        let nb2: Bs8State<T> = inv.change_basis(AesBitValueOps::x2s());
+        let x63: Bs8State<T> = AesBitValueOps::x63();
         return nb2.xor(&x63);
     }
 
     fn inv_sub_bytes(&self) -> Bs8State<T> {
-        let x63 = AesBitValueOps::x63::<T>();
+        let x63: Bs8State<T> = AesBitValueOps::x63();
         let t = self.xor(&x63);
-        let nb = t.change_basis(AesBitValueOps::s2x::<T>());
-        let inv = nb.inv();
-        return inv.change_basis(AesBitValueOps::x2a::<T>());
+        let nb: Bs8State<T> = t.change_basis(AesBitValueOps::s2x());
+	let inv = nb.inv();
+        return inv.change_basis(AesBitValueOps::x2a());
     }
 
     fn shift_rows(&self) -> Bs8State<T> {
